@@ -1,0 +1,36 @@
+{
+  "name": "ltskit",
+  "version": "0.1.0",
+  "description": "LTSKit - Công cụ tải, xử lý và dịch nội dung đa nền tảng",
+  "main": "./out/main/index.js",
+  "author": "dinhtienn",
+  "license": "MIT",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck:node": "tsc --noEmit -p tsconfig.node.json --composite false",
+    "typecheck:web": "tsc --noEmit -p tsconfig.web.json --composite false",
+    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "test:unit": "node --import tsx --test tests/vieneuNativeCli.test.ts tests/vieneuNativeAssets.test.ts tests/vieneuNativeVoices.test.ts tests/overlayGeometry.test.ts tests/ocrRegionGeometry.test.ts tests/voicePreviewSync.test.ts tests/videoComposer.test.ts tests/mediaTypes.test.ts tests/mediaUrl.test.ts tests/videoOrientation.test.ts tests/ocrEngineSource.test.ts tests/ocrInstall.test.ts tests/ocrArgs.test.ts tests/gemini.test.ts tests/geminiModels.test.ts tests/audioText.test.ts tests/screenText.test.ts tests/appTabs.test.ts tests/geminiSettingsUi.test.ts tests/settingsConnectionUi.test.ts tests/settingsLayoutUi.test.ts tests/ltskitBranding.test.ts tests/capcutDevice.test.ts tests/capcutVoices.test.ts tests/textToSpeech.test.ts tests/capcutJob.test.ts tests/capcutMix.test.ts tests/capcutWorker.test.ts tests/capcutAudioPlan.test.ts tests/capcutArgsContract.test.ts tests/capcutWorkerPool.test.ts tests/capcutManifestWriter.test.ts tests/downloadUrl.test.ts",
+    "package:win": "electron-vite build && electron-builder --win",
+    "package:mac": "electron-vite build && electron-builder --mac"
+  },
+  "dependencies": {
+    "electron-updater": "^6.3.9"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "electron": "^34.0.0",
+    "electron-builder": "^25.1.8",
+    "electron-vite": "^3.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "tsx": "^4.23.1",
+    "typescript": "^5.7.3",
+    "vite": "^6.0.7"
+  }
+}

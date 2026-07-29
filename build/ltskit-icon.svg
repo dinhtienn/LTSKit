@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="LTSKit Horizon Ring">
+  <defs>
+    <radialGradient id="background" cx="30%" cy="25%" r="95%">
+      <stop offset="0%" stop-color="#60a5fa"/>
+      <stop offset="45%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#0f766e"/>
+    </radialGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="296" fill="url(#background)"/>
+  <g fill="none" stroke="#fff" stroke-width="57" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="512" cy="512" r="295"/>
+    <path d="M223 574h578M346 574c34-113 108-176 166-176s132 63 166 176M352 687h320"/>
+  </g>
+  <circle cx="512" cy="307" r="40" fill="#fff"/>
+</svg>

@@ -1,0 +1,4 @@
+﻿requests>=2.28.0
+# Install CapCut SDK (pick one):
+#   pip install git+https://github.com/K07VN/capcut-tts-api.git
+# or clone repo and: pip install -e .
