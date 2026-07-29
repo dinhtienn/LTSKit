@@ -10,6 +10,9 @@ extraResources:
       - '**/*'
 files:
   - '!**/.vscode/*'
+  - '!appdata/**'
+  - '!.release-assets/**'
+  - '!dist/**'
   - '!src/*'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
