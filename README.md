@@ -4,8 +4,9 @@ LTSKit là ứng dụng desktop giúp tải, xử lý và dịch nội dung medi
 
 ## Nền tảng hỗ trợ
 
-- Windows
-- macOS
+- Windows 10/11 64-bit
+
+Hiện tại chưa hỗ trợ macOS và Linux.
 
 ## Chức năng chính
 
