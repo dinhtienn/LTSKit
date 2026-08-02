@@ -2,7 +2,7 @@ import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
 import type { MediaProbe, VideoRect } from '../../../shared/types'
 import { hasFeature } from '../lib/license'
-import { defaultOcrRegion } from '../lib/ocrRegionGeometry'
+import { defaultOcrRegion, formatOcrRegionForNotebook } from '../lib/ocrRegionGeometry'
 import { usePersistedState } from '../lib/persist'
 import RegionBox from './RegionBox'
 import TranslationControl from './TranslationControl'
@@ -54,6 +54,7 @@ export default function ScreenText({
   const [installing, setInstalling] = useState(false)
   const [installPct, setInstallPct] = useState(0)
   const [installErr, setInstallErr] = useState<string | null>(null)
+  const [roiCopyStatus, setRoiCopyStatus] = useState<'copied' | 'error' | null>(null)
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const videoRequestRef = useRef(0)
   const unlocked = hasFeature('ocr')
@@ -96,6 +97,7 @@ export default function ScreenText({
     setKetQua([])
     setLoi(null)
     setCanhBaoDich(null)
+    setRoiCopyStatus(null)
     try {
       const probed = await window.api.burnProbe(selected)
       if (request === videoRequestRef.current) setMedia(probed)
@@ -107,6 +109,15 @@ export default function ScreenText({
   const dung = async (): Promise<void> => {
     setDangDung(true)
     await window.api.ocrCancel()
+  }
+
+  const copyOcrRegion = async (): Promise<void> => {
+    try {
+      await navigator.clipboard.writeText(formatOcrRegionForNotebook(ocrRegion))
+      setRoiCopyStatus('copied')
+    } catch {
+      setRoiCopyStatus('error')
+    }
   }
 
   const chay = async (): Promise<void> => {
@@ -218,7 +229,7 @@ export default function ScreenText({
           <VideoStage path={video} media={media} videoRef={videoRef} videoProps={{ controls: true }}>
             {({ boxW, boxH }) => <RegionBox region={ocrRegion} setRegion={setOcrRegion} videoW={media.width} videoH={media.height} boxW={boxW} boxH={boxH} active onActivate={() => undefined} label="Vùng đọc chữ OCR" cornerHandles />}
           </VideoStage>
-          <div className="muted small ocr-toado">Video {media.width}×{media.height} · X: {ocrRegion.x0} → {ocrRegion.x1} px · Y: {ocrRegion.y0} → {ocrRegion.y1} px</div>
+          <div className="ocr-toado-row"><div className="muted small ocr-toado">Video {media.width}×{media.height} · X0: {ocrRegion.x0} · X1: {ocrRegion.x1} · Y0: {ocrRegion.y0} · Y1: {ocrRegion.y1}</div><button className="btn small-btn" onClick={copyOcrRegion} disabled={!media}>Sao chép tọa độ</button>{roiCopyStatus === 'copied' && <span className="muted small">Đã sao chép tọa độ.</span>}{roiCopyStatus === 'error' && <span className="dy-err small">Không sao chép được tọa độ.</span>}</div>
         </> : <div className="ocr-sanh"><div className="muted small">Chưa chọn video.</div></div>}
       </div>
     </div>

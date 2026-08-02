@@ -12,6 +12,8 @@ tests/
 
 *.tsbuildinfo
 *.log
+__pycache__/
+*.py[cod]
 npm-debug.log*
 .DS_Store
 Thumbs.db
