@@ -13,10 +13,5 @@ export function defaultOcrRegion(videoW: number, videoH: number): VideoRect {
 }
 
 export function formatOcrRegionForNotebook(region: VideoRect): string {
-  return [
-    `X0 = ${Math.round(region.x0)}`,
-    `X1 = ${Math.round(region.x1)}`,
-    `Y0 = ${Math.round(region.y0)}`,
-    `Y1 = ${Math.round(region.y1)}`
-  ].join('\n')
+  return `'x0': ${Math.round(region.x0)}, 'x1': ${Math.round(region.x1)}, 'y0': ${Math.round(region.y0)}, 'y1': ${Math.round(region.y1)}`
 }
