@@ -19,6 +19,9 @@ import {
   BurnReq,
   BurnResult,
   GeminiStatus,
+  GeminiKeyDescriptor,
+  GeminiStoredKeyCheck,
+  GeminiProgress,
   GeminiModelDiscovery,
   GeminiReadiness,
   GeminiTranslationResult,
@@ -197,6 +200,10 @@ const api = {
 
   // ---- Dich phu de bang API key cua user ----
   geminiHasKey: (): Promise<boolean> => ipcRenderer.invoke('gemini:hasKey'),
+  geminiKeys: (): Promise<GeminiKeyDescriptor[]> => ipcRenderer.invoke('gemini:keys'),
+  geminiCheckNewKey: (key: string): Promise<GeminiStatus> => ipcRenderer.invoke('gemini:checkNewKey', key),
+  geminiCheckStoredKey: (id: string): Promise<GeminiStoredKeyCheck> => ipcRenderer.invoke('gemini:checkStoredKey', id),
+  geminiRemoveKey: (id: string): Promise<void> => ipcRenderer.invoke('gemini:removeKey', id),
   geminiSaveKey: (key: string): Promise<void> => ipcRenderer.invoke('gemini:saveKey', key),
   geminiCheckKey: (key: string): Promise<GeminiStatus> => ipcRenderer.invoke('gemini:checkKey', key),
   geminiModels: (): Promise<string[]> => ipcRenderer.invoke('gemini:models'),
@@ -204,13 +211,14 @@ const api = {
   geminiSaveModels: (models: string[]): Promise<void> => ipcRenderer.invoke('gemini:saveModels', models),
   geminiReadiness: (): Promise<GeminiReadiness> => ipcRenderer.invoke('gemini:readiness'),
   geminiTranslateSrt: (
+    jobId: string,
     srtPath: string,
     outPath: string,
     dich: string
   ): Promise<GeminiTranslationResult> =>
-    ipcRenderer.invoke('gemini:translateSrt', srtPath, outPath, dich),
-  onGeminiProgress: (cb: (p: { done: number; total: number }) => void): (() => void) => {
-    const listener = (_e: unknown, p: { done: number; total: number }): void => cb(p)
+    ipcRenderer.invoke('gemini:translateSrt', jobId, srtPath, outPath, dich),
+  onGeminiProgress: (cb: (p: GeminiProgress) => void): (() => void) => {
+    const listener = (_e: unknown, p: GeminiProgress): void => cb(p)
     ipcRenderer.on('gemini:progress', listener)
     return () => ipcRenderer.removeListener('gemini:progress', listener)
   },

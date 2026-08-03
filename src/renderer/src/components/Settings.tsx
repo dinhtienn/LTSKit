@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
 import type { CookieProfile } from '../../../shared/types'
+import type { GeminiKeyDescriptor } from '../../../shared/types'
 import GeminiHelp from './GeminiHelp'
 import { loadSharedProxy } from '../lib/downloadConnection'
 import { usePersistedState } from '../lib/persist'
@@ -8,6 +9,7 @@ import { usePersistedState } from '../lib/persist'
 const REPO_URL = 'https://github.com/dinhtienn/LTSKit'
 const AUTHOR_URL = 'https://github.com/dinhtienn'
 const FEEDBACK_URL = 'https://github.com/dinhtienn/LTSKit/issues'
+const GEMINI_KEY_MASK = '********'
 
 type SettingsTab = 'account' | 'connection' | 'aiTools' | 'about'
 
@@ -20,8 +22,12 @@ const SETTINGS_TABS: Array<{ key: SettingsTab; label: string; icon: JSX.Element 
 
 export default function Settings(): JSX.Element {
   const [tab, setTab] = useState<SettingsTab>('account')
-  const [key, setKey] = useState('')
-  const [daLuu, setDaLuu] = useState(false)
+  const [keys, setKeys] = useState<GeminiKeyDescriptor[]>([])
+  const [draftKey, setDraftKey] = useState('')
+  const [addingKey, setAddingKey] = useState(false)
+  const [revealed, setRevealed] = useState<Record<string, string>>({})
+  const [checkingId, setCheckingId] = useState<string | null>(null)
+  const daLuu = keys.length > 0
   const [dangKiem, setDangKiem] = useState(false)
   const [kq, setKq] = useState<{ ok: boolean; message: string } | null>(null)
   const [hienHd, setHienHd] = useState(false)
@@ -43,7 +49,7 @@ export default function Settings(): JSX.Element {
   const refreshProfiles = (): void => { void window.api.cookieProfiles().then(setProfiles) }
 
   useEffect(() => {
-    void window.api.geminiHasKey().then(setDaLuu)
+    void window.api.geminiKeys().then(setKeys)
     void window.api.geminiModels().then(setPool)
     refreshProfiles()
     void window.api.ytdlpVersion().then(setYtVer)
@@ -74,24 +80,34 @@ export default function Settings(): JSX.Element {
     void window.api.ytdlpVersion().then(setYtVer)
   }
 
-  const kiem = async (): Promise<void> => {
-    setDangKiem(true)
-    setKq(null)
-    if (key.trim()) await window.api.geminiSaveKey(key.trim())
-    const result = await window.api.geminiCheckKey(key.trim())
-    setKq(result)
-    setDangKiem(false)
-    if (result.ok) {
-      setDaLuu(true)
-      setKey('')
+  const refreshKeys = async (): Promise<void> => setKeys(await window.api.geminiKeys())
+
+  const kiemKeyMoi = async (): Promise<void> => {
+    if (!draftKey.trim()) return
+    setDangKiem(true); setKq(null)
+    try {
+      const result = await window.api.geminiCheckNewKey(draftKey.trim())
+      setKq(result)
+      if (result.ok) { setDraftKey(''); setAddingKey(false); await refreshKeys() }
+    } finally { setDangKiem(false) }
+  }
+
+  const kiemKeyCu = async (id: string): Promise<void> => {
+    setCheckingId(id); setKq(null)
+    try {
+      const result = await window.api.geminiCheckStoredKey(id)
+      if (result.key) setRevealed((prev) => ({ ...prev, [id]: result.key }))
+      setKq(result)
+    } finally {
+      setRevealed((prev) => { const next = { ...prev }; delete next[id]; return next })
+      setCheckingId(null)
     }
   }
 
-  const xoa = async (): Promise<void> => {
-    await window.api.geminiSaveKey('')
-    setDaLuu(false)
+  const xoa = async (id: string): Promise<void> => {
+    await window.api.geminiRemoveKey(id)
+    await refreshKeys()
     setKq(null)
-    setKey('')
   }
 
   const discover = async (): Promise<void> => {
@@ -189,19 +205,22 @@ export default function Settings(): JSX.Element {
           <span className={`gk-badge ${daLuu ? 'ok' : ''}`}>{daLuu ? 'Đã có khoá' : 'Chưa cấu hình'}</span>
         </div>
 
-        <div className="gk-row">
-          <input
-            type="password"
-            placeholder={daLuu ? '••••••••••  (đã lưu — dán khoá mới để thay)' : 'Dán API key vào đây'}
-            value={key}
-            onChange={(event) => setKey(event.target.value)}
-            spellCheck={false}
-          />
-          <button className="btn" disabled={dangKiem || (!key.trim() && !daLuu)} onClick={kiem}>
-            {dangKiem ? 'Đang kiểm…' : 'Kiểm tra key'}
-          </button>
-          {daLuu && <button className="btn" onClick={xoa}>Xoá khoá</button>}
-        </div>
+         <div className="gemini-key-list">
+           {keys.length === 0 && !addingKey && <div className="muted small">Chưa có API key.</div>}
+           {keys.map((item, index) => <div className="gemini-key-row" key={item.id}>
+             <span className="gemini-key-value"><b>{index + 1}.</b> {revealed[item.id] ?? GEMINI_KEY_MASK}</span>
+             <div className="model-actions">
+               <button className="btn" disabled={checkingId !== null} onClick={() => kiemKeyCu(item.id)}>{checkingId === item.id ? 'Đang kiểm…' : 'Kiểm tra key'}</button>
+               <button className="btn" disabled={checkingId !== null} onClick={() => xoa(item.id)}>Xóa</button>
+             </div>
+           </div>)}
+           {addingKey && <div className="gemini-key-add gk-row">
+             <input type="password" placeholder="Dán API key mới" value={draftKey} onChange={(event) => setDraftKey(event.target.value)} spellCheck={false} />
+             <button className="btn primary" disabled={dangKiem || !draftKey.trim()} onClick={kiemKeyMoi}>{dangKiem ? 'Đang kiểm…' : 'Kiểm tra key'}</button>
+             <button className="btn" disabled={dangKiem} onClick={() => { setAddingKey(false); setDraftKey('') }}>Hủy</button>
+           </div>}
+           {!addingKey && <button className="btn gemini-key-add-button" aria-label="Thêm Gemini API key" onClick={() => setAddingKey(true)}>+ Thêm key</button>}
+         </div>
 
         {kq && <div className={`gk-kq small ${kq.ok ? 'ok' : 'err'}`}>{kq.ok ? '✔' : '✗'} {kq.message}</div>}
 

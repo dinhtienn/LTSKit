@@ -44,6 +44,7 @@ import {
 } from './whisper'
 import { detectGpu } from './gpu'
 import { checkKey, hasKey, saveKey, translateSrt } from './gemini'
+import { addKey, getKey, listKeys, removeKey } from './geminiStore'
 import { discoverModels, geminiReadiness, loadModelPool, saveModelPool } from './geminiModels'
 import { cancelOcr, installOcrEngine, ocrEngineStatus, ocrVideo } from './ocr'
 import { burnSubtitle, cancelBurn, srtGiay } from './burn'
@@ -475,6 +476,18 @@ function registerIpc(): void {
 
   // ---- Dich phu de bang API key cua user ----
   ipcMain.handle('gemini:hasKey', async () => hasKey())
+  ipcMain.handle('gemini:keys', async () => listKeys())
+  ipcMain.handle('gemini:checkNewKey', async (_e, key: string) => {
+    const result = await checkKey(key)
+    if (result.ok) await addKey(key)
+    return result
+  })
+  ipcMain.handle('gemini:checkStoredKey', async (_e, id: string) => {
+    const key = await getKey(id)
+    if (!key) return { ok: false, message: 'Không tìm thấy API key.', key: '' }
+    return { ...(await checkKey(key)), key }
+  })
+  ipcMain.handle('gemini:removeKey', async (_e, id: string) => removeKey(id))
   ipcMain.handle('gemini:saveKey', async (_e, key: string) => saveKey(key))
   ipcMain.handle('gemini:checkKey', async (_e, key: string) => checkKey(key))
   ipcMain.handle('gemini:models', async () => loadModelPool())
@@ -483,9 +496,9 @@ function registerIpc(): void {
   ipcMain.handle('gemini:readiness', async () => geminiReadiness())
   ipcMain.handle(
     'gemini:translateSrt',
-    async (event, srtPath: string, outPath: string, dich: string) =>
+    async (event, jobId: string, srtPath: string, outPath: string, dich: string) =>
       translateSrt(srtPath, outPath, dich, (d, t) =>
-        event.sender.send('gemini:progress', { done: d, total: t })
+        event.sender.send('gemini:progress', { jobId, done: d, total: t }), undefined, jobId
       )
   )
 

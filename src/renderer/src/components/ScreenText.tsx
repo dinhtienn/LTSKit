@@ -172,7 +172,7 @@ export default function ScreenText({
       if (translationTarget !== 'none') {
         setBuoc('dich')
         const translated = result.output!.replace(/\.srt$/i, `.${translationTarget}.srt`)
-        const translation = await window.api.geminiTranslateSrt(result.output!, translated, translationTarget)
+        const translation = await window.api.geminiTranslateSrt(`screen-text-${crypto.randomUUID()}`, result.output!, translated, translationTarget)
         if (!translation.ok || !translation.output) {
           setLoi(`Dịch: ${translation.error}`)
           setBuoc('loi')

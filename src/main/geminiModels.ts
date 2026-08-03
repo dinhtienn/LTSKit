@@ -2,7 +2,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { GeminiModelDiscovery, GeminiReadiness } from '../shared/types'
 import { DATA_DIR } from './deps'
-import { hasKey, loadKey } from './geminiStore'
+import { firstKey, hasKey } from './geminiStore'
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta'
 const EXCLUDED = /image|imagen|tts|audio|speech|embedding|robotics|computer-use|omni/i
@@ -97,7 +97,7 @@ export async function geminiReadiness(): Promise<GeminiReadiness> {
 }
 
 export async function discoverModels(): Promise<GeminiModelDiscovery> {
-  const key = await loadKey()
+  const key = await firstKey()
   if (!key) return { ok: false, error: 'Chưa có API key.' }
   try {
     const response = await fetch(`${BASE}/models?key=${key}`, { signal: AbortSignal.timeout(15_000) })

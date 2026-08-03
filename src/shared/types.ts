@@ -351,6 +351,21 @@ export interface GeminiStatus {
   message: string
 }
 
+export interface GeminiKeyDescriptor {
+  id: string
+  masked: '********'
+}
+
+export interface GeminiStoredKeyCheck extends GeminiStatus {
+  key: string
+}
+
+export interface GeminiProgress {
+  jobId: string
+  done: number
+  total: number
+}
+
 export interface GeminiReadiness {
   hasKey: boolean
   hasModels: boolean

@@ -551,6 +551,32 @@ select {
   background: var(--panel-2);
   color: var(--text);
 }
+.gemini-key-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
+  min-height: 0;
+}
+.gemini-key-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.gemini-key-value {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+.gemini-key-add-button { align-self: flex-start; }
+.gemini-key-add { margin-top: 2px; }
 .gk-kq.ok {
   color: var(--ok);
 }
@@ -720,6 +746,10 @@ select {
   }
   .model-row {
     flex-wrap: wrap;
+  }
+  .gemini-key-row {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 

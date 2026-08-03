@@ -6,9 +6,12 @@ import {
   type GeminiTranslationResult,
   type SrtBlock
 } from '../shared/types'
-import { hasKey, loadKey, saveKey } from './geminiStore'
+import { firstKey, getKey, hasKey, listKeys, loadKey, saveKey } from './geminiStore'
 import { advanceModelCursor, orderedPool } from './geminiModels'
+import { createGeminiKeyPool, type GeminiKeyLease, type GeminiKeyPool } from './geminiKeyPool'
 export { hasKey, loadKey, saveKey }
+
+const keyPool: GeminiKeyPool = createGeminiKeyPool({ list: listKeys, get: getKey })
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta'
 
@@ -103,6 +106,11 @@ async function goiCoLui(
     (model) => goi(key, model, sys, user, schema, han),
     advanceModelCursor
   )
+}
+
+function canFailover(result: GenKQ): boolean {
+  return result.status === 0 || result.status === 400 || result.status === 401 || result.status === 403 ||
+    result.status === 429 || (result.status ?? 0) >= 500
 }
 
 /**
@@ -310,29 +318,45 @@ export async function translateSrt(
   outPath: string,
   dich: string,
   onProgress?: (done: number, total: number) => void,
-  generate?: GeminiGenerate
+  generate?: GeminiGenerate,
+  jobId = `translation-${Date.now()}-${Math.random()}`
 ): Promise<GeminiTranslationResult> {
-  const key = generate ? '' : await loadKey()
+  const key = generate ? '' : await firstKey()
   if (!generate && !key) return { ok: false, error: 'Chưa có API key.' }
 
   const blocks = parseSrt(await readFile(srtPath, 'utf-8'))
   if (!blocks.length) return { ok: false, error: 'File phụ đề trống.' }
 
-  const call: GeminiGenerate = generate ?? ((sys, user, schema) => goiCoLui(key, sys, user, schema))
+  let lease: GeminiKeyLease | null = null
+  const call: GeminiGenerate = generate ?? (async (sys, user, schema) => {
+    while (true) {
+      if (!lease) lease = await keyPool.acquire(jobId)
+      const result = await goiCoLui(lease.key, sys, user, schema)
+      if (result.ok || !canFailover(result)) return result
+      await keyPool.disable(jobId, lease.id)
+      await lease.release()
+      lease = null
+    }
+  })
   const chunks = chia(blocks)
   logInfo(`Dịch phụ đề: ${blocks.length} câu…`)
 
   const ra: SrtBlock[] = []
   let verified = true
   let done = 0
-  for (const chunk of chunks) {
-    const result = await processChunk(chunk, dich, call, (count) => {
-      done += count
-      onProgress?.(done, blocks.length)
-    })
-    if (!result.ok) return { ok: false, error: result.error }
-    verified = verified && result.verified
-    ra.push(...result.blocks)
+  try {
+    for (const chunk of chunks) {
+      const result = await processChunk(chunk, dich, call, (count) => {
+        done += count
+        onProgress?.(done, blocks.length)
+      })
+      if (!result.ok) return { ok: false, error: result.error }
+      verified = verified && result.verified
+      ra.push(...result.blocks)
+    }
+  } finally {
+    const activeLease: GeminiKeyLease | null = lease
+    if (activeLease) await keyPool.release(activeLease)
   }
 
   const unverified = outPath.replace(/\.srt$/i, '.unverified.srt')

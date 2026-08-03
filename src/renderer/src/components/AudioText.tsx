@@ -1,5 +1,5 @@
 import type { JSX } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { GpuInfo, WhisperRequest } from '../../../shared/types'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
@@ -87,6 +87,7 @@ export default function AudioText({
 
   const [items, setItems] = useState<WhItem[]>([])
   const runner = useQueueRunner<WhItem>()
+  const translationTasks = useRef(new Set<Promise<void>>())
 
   // Tang toc GPU (tuy chon) — buoc quet an toan truoc khi cho tai goi CUDA
   const [gpu, setGpu] = useState<GpuInfo | null>(null)
@@ -143,7 +144,10 @@ export default function AudioText({
         )
       )
     })
-    return off
+    const offGemini = window.api.onGeminiProgress((p) => {
+      setItems((prev) => prev.map((it) => it.id === p.jobId ? { ...it, percent: p.total ? Math.round((p.done / p.total) * 100) : it.percent } : it))
+    })
+    return () => { off(); offGemini() }
   }, [])
 
   // Nhan file gui tu tab Tai xuong ("Lay sub")
@@ -217,7 +221,7 @@ export default function AudioText({
     }
   }
 
-  const runItem = async (it: WhItem): Promise<void> => {
+  const runItem = async (it: WhItem, waitForTranslation = true): Promise<void> => {
     setItems((prev) =>
       prev.map((x) => (x.id === it.id ? { ...x, status: 'running', percent: 0, error: null } : x))
     )
@@ -232,21 +236,20 @@ export default function AudioText({
       }
       setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, status: 'translating' } : x)))
       const out = it.input.replace(/\.srt$/i, `.${translationTarget}.srt`)
-      const translation = await window.api.geminiTranslateSrt(it.input, out, translationTarget)
-      setItems((prev) =>
-        prev.map((x) =>
-          x.id === it.id
-            ? {
-                ...x,
-                status: translation.ok && translation.output ? 'done' : 'error',
-                percent: translation.ok ? 100 : x.percent,
-                outputs: translation.output ? [translation.output] : [],
-                translationVerified: translation.verified ?? null,
-                error: translation.ok ? null : translation.error ?? 'Dịch thất bại.'
-              }
-            : x
-        )
-      )
+      const task = (async (): Promise<void> => {
+        const translation = await window.api.geminiTranslateSrt(it.id, it.input, out, translationTarget)
+        setItems((prev) => prev.map((x) => x.id === it.id ? {
+          ...x,
+          status: translation.ok && translation.output ? 'done' : 'error',
+          percent: translation.ok ? 100 : x.percent,
+          outputs: translation.output ? [translation.output] : [],
+          translationVerified: translation.verified ?? null,
+          error: translation.ok ? null : translation.error ?? 'Dịch thất bại.'
+        } : x))
+      })()
+      translationTasks.current.add(task)
+      void task.finally(() => translationTasks.current.delete(task))
+      if (waitForTranslation) await task
       return
     }
 
@@ -263,12 +266,28 @@ export default function AudioText({
           prev.map((x) => (x.id === it.id ? { ...x, status: 'translating' } : x))
         )
         const out = srt.replace(/\.srt$/i, `.${translationTarget}.srt`)
-        const t = await window.api.geminiTranslateSrt(srt, out, translationTarget)
-        if (t.ok && t.output) {
-          outputs.push(t.output)
-          translationVerified = t.verified ?? null
+        const task = (async (): Promise<void> => {
+          const t = await window.api.geminiTranslateSrt(it.id, srt, out, translationTarget)
+          if (t.ok && t.output) {
+            outputs.push(t.output)
+            translationVerified = t.verified ?? null
+          } else setDichErr(t.error ?? 'Dịch thất bại.')
+          setItems((prev) => prev.map((x) => x.id === it.id ? {
+            ...x,
+            status: res.ok ? 'done' : 'error',
+            percent: res.ok ? 100 : x.percent,
+            outputs,
+            translationVerified,
+            error: res.ok ? null : res.error
+          } : x))
+        })()
+        translationTasks.current.add(task)
+        void task.finally(() => translationTasks.current.delete(task))
+        if (waitForTranslation) await task
+        if (!waitForTranslation) {
+          setItems((prev) => prev.map((x) => x.id === it.id ? { ...x, status: res.ok ? 'done' : 'error', percent: res.ok ? 100 : x.percent, outputs, speakers: res.speakers, translationVerified: null, error: res.ok ? null : res.error } : x))
+          return
         }
-        else setDichErr(t.error ?? 'Dịch thất bại.')
       }
     }
 
@@ -304,7 +323,9 @@ export default function AudioText({
     }
     setDichErr(null)
     const queue = items.filter((it) => it.status === 'queued' || it.status === 'error')
-    void runner.run(queue, runItem)
+    void runner.run(queue, (it) => runItem(it, false)).then(async () => {
+      await Promise.allSettled([...translationTasks.current])
+    })
   }
 
   const removeItem = (id: string): void => setItems((prev) => prev.filter((x) => x.id !== id))
