@@ -897,6 +897,10 @@ select {
   color: #fff;
   box-shadow: 0 0 0 1px var(--primary);
 }
+.blur-region-list { display: grid; gap: 4px; margin-top: 8px; }
+.blur-region-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; }
+.blur-region-item.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.danger-link { color: #f87171; }
 .rbox-lop.overlay-active,
 .logo-box.overlay-active {
   z-index: 2;

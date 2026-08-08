@@ -99,6 +99,12 @@ import type { BurnReq } from '../shared/types'
 
 let mainWindow: BrowserWindow | null = null
 
+function windowIconPath(): string {
+  return app.isPackaged
+    ? join(process.resourcesPath, 'icon.ico')
+    : join(__dirname, '../../build/icon.ico')
+}
+
 function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1320,
@@ -108,7 +114,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'LTSKit',
-    icon: join(__dirname, '../../build/icon.png'),
+    icon: windowIconPath(),
     backgroundColor: '#0f172a',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

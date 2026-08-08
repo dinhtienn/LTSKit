@@ -4,6 +4,8 @@ directories:
   buildResources: build
   output: dist
 extraResources:
+  - from: build/icon.ico
+    to: icon.ico
   - from: resources/capcut-tts
     to: capcut-tts
     filter:

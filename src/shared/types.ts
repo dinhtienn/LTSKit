@@ -223,6 +223,10 @@ export interface VideoRect {
   y1: number
 }
 
+export interface BlurRegion extends VideoRect {
+  id: string
+}
+
 export interface LogoOverlay {
   path: string
   rect: VideoRect
@@ -246,6 +250,7 @@ export interface BurnReq {
   srt?: string | null
   mode?: 'burn' | 'soft'
   region?: VideoRect | null
+  blurRegions?: BlurRegion[]
   lamMo?: boolean
   coChu?: CoChu
   catSrt?: boolean

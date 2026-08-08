@@ -23,6 +23,7 @@ interface RegionBoxProps {
   boxW: number
   boxH: number
   previewBlur?: boolean
+  showMask?: boolean
   active: boolean
   onActivate: () => void
   label?: string
@@ -45,6 +46,7 @@ export default function RegionBox({
   boxW,
   boxH,
   previewBlur = false,
+  showMask = true,
   active,
   onActivate,
   label,
@@ -140,21 +142,23 @@ export default function RegionBox({
 
   return (
     <div className={`rbox-lop ${active ? 'overlay-active' : ''}`}>
-      <div className="rbox-mo" style={{ top: 0, left: 0, right: 0, height: yPct(region.y0) }} />
-      <div className="rbox-mo" style={{ top: yPct(region.y1), left: 0, right: 0, bottom: 0 }} />
-      <div
-        className="rbox-mo"
-        style={{ top: yPct(region.y0), left: 0, width: xPct(region.x0), height: yPct(region.y1 - region.y0) }}
-      />
-      <div
-        className="rbox-mo"
-        style={{
-          top: yPct(region.y0),
-          left: xPct(region.x1),
-          right: 0,
-          height: yPct(region.y1 - region.y0)
-        }}
-      />
+      {showMask && <>
+        <div className="rbox-mo" style={{ top: 0, left: 0, right: 0, height: yPct(region.y0) }} />
+        <div className="rbox-mo" style={{ top: yPct(region.y1), left: 0, right: 0, bottom: 0 }} />
+        <div
+          className="rbox-mo"
+          style={{ top: yPct(region.y0), left: 0, width: xPct(region.x0), height: yPct(region.y1 - region.y0) }}
+        />
+        <div
+          className="rbox-mo"
+          style={{
+            top: yPct(region.y0),
+            left: xPct(region.x1),
+            right: 0,
+            height: yPct(region.y1 - region.y0)
+          }}
+        />
+      </>}
 
       <div
         className={`rbox ${previewBlur ? 'rbox-lammo' : ''}`}

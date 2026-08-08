@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { dirname, extname, join } from 'node:path'
 import { resolveFfmpeg } from './deps'
-import type { BurnReq, LogoDimensions, MediaProbe, VideoRect } from '../shared/types'
+import type { BlurRegion, BurnReq, LogoDimensions, MediaProbe, VideoRect } from '../shared/types'
 import { displayDimensions } from '../shared/videoOrientation'
 
 export interface ComposerPlan {
@@ -224,6 +224,12 @@ function validRect(rect: VideoRect | null | undefined, meta: MediaProbe): boolea
     rect.x1 <= meta.width && rect.y1 <= meta.height
 }
 
+function effectiveBlurRegions(req: BurnReq): BlurRegion[] {
+  if (req.blurRegions !== undefined) return req.blurRegions
+  if (req.region) return [{ id: 'legacy', ...req.region }]
+  return []
+}
+
 export function validateBurnRequest(req: BurnReq, meta: MediaProbe): string | null {
   if (![req.videoVolume, req.voiceVolume].every((value) =>
     Number.isFinite(value) && value >= 0 && value <= 100
@@ -233,7 +239,10 @@ export function validateBurnRequest(req: BurnReq, meta: MediaProbe): string | nu
   if (req.srt && req.mode === 'burn' && !validRect(req.region, meta)) {
     return 'Vùng đặt phụ đề không hợp lệ hoặc nằm ngoài video.'
   }
-  if (req.lamMo && !validRect(req.region, meta)) return 'vùng làm mờ không hợp lệ hoặc nằm ngoài video.'
+  const blurRegions = effectiveBlurRegions(req)
+  if (req.lamMo && (blurRegions.length === 0 || blurRegions.some((rect) => !validRect(rect, meta)))) {
+    return 'vùng làm mờ không hợp lệ hoặc nằm ngoài video.'
+  }
   if (req.logo && (!req.logo.path || !validRect(req.logo.rect, meta))) {
     return 'Vùng logo không hợp lệ hoặc nằm ngoài video.'
   }
@@ -264,17 +273,25 @@ export function buildComposerPlan(
   let videoLabel = '0:v'
   let videoStep = 0
 
-  if (req.lamMo && req.region) {
-    const x = evenCoordinate(req.region.x0)
-    const y = evenCoordinate(req.region.y0)
-    const width = evenDimension(req.region.x1 - req.region.x0)
-    const height = evenDimension(req.region.y1 - req.region.y0)
-    filters.push(
-      `[${videoLabel}]split=2[vbase][vblur]`,
-      `[vblur]crop=${width}:${height}:${x}:${y},gblur=sigma=20[blur]`,
-      `[vbase][blur]overlay=${x}:${y}[v${++videoStep}]`
-    )
-    videoLabel = `v${videoStep}`
+  const blurRegions = req.lamMo ? effectiveBlurRegions(req) : []
+  if (blurRegions.length > 0) {
+    const branches = blurRegions.map((_, index) => `[vblur${index}]`).join('')
+    filters.push(`[${videoLabel}]split=${blurRegions.length + 1}[vbase]${branches}`)
+    videoLabel = 'vbase'
+    for (const [index, rect] of blurRegions.entries()) {
+      const x = evenCoordinate(rect.x0)
+      const y = evenCoordinate(rect.y0)
+      const width = evenDimension(rect.x1 - rect.x0)
+      const height = evenDimension(rect.y1 - rect.y0)
+      filters.push(`[vblur${index}]crop=${width}:${height}:${x}:${y},gblur=sigma=20[blur${index}]`)
+    }
+    for (const [index, rect] of blurRegions.entries()) {
+      const x = evenCoordinate(rect.x0)
+      const y = evenCoordinate(rect.y0)
+      const out = `[v${++videoStep}]`
+      filters.push(`[${videoLabel}][blur${index}]overlay=${x}:${y}${out}`)
+      videoLabel = `v${videoStep}`
+    }
   }
 
   if (req.logo && logoInput !== null) {

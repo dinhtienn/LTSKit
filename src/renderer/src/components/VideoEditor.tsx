@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { CoChu, MediaProbe, VideoRect } from '../../../shared/types'
+import type { BlurRegion, CoChu, MediaProbe, VideoRect } from '../../../shared/types'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
 import { mediaUrl } from '../lib/mediaUrl'
@@ -33,6 +33,8 @@ export default function VideoEditor({
   const [logo, setLogo] = useState('')
   const [logoAspect, setLogoAspect] = useState(1)
   const [region, setRegion] = useState<VideoRect>({ x0: 0, x1: 0, y0: 0, y1: 0 })
+  const [blurRegions, setBlurRegions] = useState<BlurRegion[]>([])
+  const [activeBlurId, setActiveBlurId] = useState<string | null>(null)
   const [logoRect, setLogoRect] = useState<VideoRect>({ x0: 0, x1: 0, y0: 0, y1: 0 })
   const [activeOverlay, setActiveOverlay] = useState<'region' | 'logo'>('region')
   const [coChu, setCoChu] = usePersistedState('ltskit.ocr.cochu', 'auto')
@@ -53,6 +55,9 @@ export default function VideoEditor({
   useEffect(() => {
     if (!media) return
     setRegion({ x0: 0, x1: media.width, y0: Math.round(media.height * 0.75), y1: media.height })
+    const initial: BlurRegion = { id: crypto.randomUUID(), x0: 0, x1: media.width, y0: Math.round(media.height * 0.75), y1: media.height }
+    setBlurRegions([initial])
+    setActiveBlurId(initial.id)
   }, [media])
 
   useEffect(() => {
@@ -120,6 +125,8 @@ export default function VideoEditor({
     setSrtNgoai('')
     setSubtitleEnabled(false)
     setBlurEnabled(false)
+    setBlurRegions([])
+    setActiveBlurId(null)
     setVoiceEnabled(false)
     setVoice('')
     setVideoVolume(100)
@@ -203,7 +210,8 @@ export default function VideoEditor({
       off = window.api.onBurnProgress((progress) => setGhepPct(progress.percent < 0 ? 0 : progress.percent))
       const result = await window.api.burnStart({
         video, outputDir, srt: subtitleEnabled ? srtNgoai : null, mode: subtitleEnabled ? ghepMode : undefined,
-        region: blurEnabled || (subtitleEnabled && ghepMode === 'burn') ? region : null,
+        region: subtitleEnabled && ghepMode === 'burn' ? region : null,
+        blurRegions: blurEnabled ? blurRegions : [],
         lamMo: blurEnabled, coChu: coChu as CoChu, catSrt: subtitleEnabled && subtitleMismatch === 'dai',
         voice: voiceEnabled ? voice : null, videoVolume, voiceVolume,
         logo: logoEnabled && logo ? { path: logo, rect: logoRect } : null
@@ -221,6 +229,22 @@ export default function VideoEditor({
     } finally {
       try { off() } catch { /* Export state is already finalized. */ }
     }
+  }
+
+  const addBlurRegion = (): void => {
+    if (!media) return
+    const id = crypto.randomUUID()
+    setBlurRegions((current) => [...current, { id, x0: Math.round(media.width * 0.1), x1: Math.round(media.width * 0.4), y0: Math.round(media.height * 0.1), y1: Math.round(media.height * 0.25) }])
+    setActiveBlurId(id)
+  }
+
+  const updateBlurRegion = (id: string, next: VideoRect): void => {
+    setBlurRegions((current) => current.map((item) => item.id === id ? { ...item, ...next } : item))
+  }
+
+  const removeBlurRegion = (id: string): void => {
+    setBlurRegions((current) => current.filter((item) => item.id !== id))
+    setActiveBlurId((current) => current === id ? null : current)
   }
 
   if (!unlocked) return <div className="card muted">Tính năng đang khoá.</div>
@@ -254,7 +278,7 @@ export default function VideoEditor({
               {ghepMode === 'burn' && <label className="field"><span className="muted small">Cỡ chữ</span><select value={coChu} onChange={(event) => setCoChu(event.target.value)}><option value="auto">Tự động (theo khung)</option><option value="nho">Nhỏ</option><option value="vua">Vừa</option><option value="lon">Lớn</option><option value="ratlon">Rất lớn</option></select></label>}
             </>}
           </div>
-          <div className="composer-section"><label className="gk-check composer-head"><input type="checkbox" checked={blurEnabled} onChange={(event) => setBlurEnabled(event.target.checked)} /><b>Làm mờ</b></label>{blurEnabled && <div className="muted small overlay-help">Làm mờ vùng trong khung xanh. Khung này cũng chọn tâm phụ đề gắn cố định.</div>}</div>
+          <div className="composer-section"><label className="gk-check composer-head"><input type="checkbox" checked={blurEnabled} onChange={(event) => setBlurEnabled(event.target.checked)} /><b>Làm mờ</b></label>{blurEnabled && <><div className="muted small overlay-help">Có {blurRegions.length} vùng mờ.</div><button className="btn small-btn" onClick={addBlurRegion}>+ Thêm vùng mờ</button><div className="blur-region-list">{blurRegions.map((item, index) => <div key={item.id} className={`blur-region-item ${activeBlurId === item.id ? 'active' : ''}`}><button type="button" className="link-btn" onClick={() => setActiveBlurId(item.id)}>Vùng mờ {index + 1}</button>{blurRegions.length > 1 && <button type="button" className="link-btn danger-link" onClick={() => removeBlurRegion(item.id)}>Xóa</button>}</div>)}</div></>}</div>
           <div className="composer-section"><label className="gk-check composer-head"><input type="checkbox" checked={voiceEnabled} onChange={(event) => setVoiceEnabled(event.target.checked)} /><b>Voice</b></label>{voiceEnabled && <><button className="btn" onClick={chooseVoice}>🎙 Chọn file voice</button>{voice && <div className="muted small ocr-ten">{baseName(voice)}</div>}<label className="volume-row"><span>Âm lượng voice</span><input type="range" min="0" max="100" step="1" value={voiceVolume} onChange={(event) => setVoiceVolume(Number(event.target.value))} /><span className="volume-value">{voiceVolume}%</span></label></>}</div>
           <div className="composer-section"><label className="gk-check composer-head"><input type="checkbox" checked={logoEnabled} onChange={(event) => setLogoEnabled(event.target.checked)} /><b>Logo</b></label><button className="btn" onClick={chooseLogo} disabled={!media}>🖼 Chọn ảnh logo</button>{logo && <div className="muted small ocr-ten">{baseName(logo)}</div>}</div>
           <div className="cookie-actions">{ghep !== 'chay' ? <button className="btn primary" disabled={!canExport || !outputDir} onClick={exportVideo}>🎬 Xuất video</button> : <><button className="btn danger" onClick={() => window.api.burnCancel()}>■ Dừng</button><span className="cookie-status ok">Đang xuất... {ghepPct}%</span></>}</div>
@@ -265,8 +289,8 @@ export default function VideoEditor({
       </div>
       <div className="cot-ketqua cot-video"><div className="cot-tieude">Video &amp; vùng chữ</div>
         {video && media ? <><div className="muted small">Kéo hoặc dùng phím mũi tên để di chuyển; giữ Shift để đi nhanh hơn. Chọn lớp cần sửa bằng các nút bên dưới.</div>
-          <div className="overlay-selector" role="group" aria-label="Chọn lớp phủ cần chỉnh sửa"><button type="button" className={`btn ${activeOverlay === 'region' ? 'active' : ''}`} aria-pressed={activeOverlay === 'region'} onClick={() => setActiveOverlay('region')}>Vùng chữ</button><button type="button" className={`btn ${activeOverlay === 'logo' ? 'active' : ''}`} aria-pressed={activeOverlay === 'logo'} disabled={!logoEnabled || !logo} onClick={() => setActiveOverlay('logo')}>Logo</button></div>
-          <VideoStage path={video} media={media} videoRef={videoRef} videoProps={{ controls: true, onLoadedMetadata: () => { const element = videoRef.current; if (element) setVideoSeconds(Number.isFinite(element.duration) ? element.duration : 0) }, onError: () => setGhepLoi('Không mở được video này. Thử định dạng khác (mp4/webm).'), onPlay: () => void syncVoice(true), onPause: () => void syncVoice(false), onTimeUpdate: () => void syncVoice(!(videoRef.current?.paused ?? true), false), onWaiting: () => void syncVoice(false), onStalled: () => void syncVoice(false), onPlaying: () => void syncVoice(!(videoRef.current?.paused ?? true)), onCanPlay: () => void syncVoice(!(videoRef.current?.paused ??true)), onSeeking: () => void syncVoice(false), onSeeked: () => void syncVoice(!(videoRef.current?.paused ?? true)), onRateChange: () => void syncVoice(!(videoRef.current?.paused ?? true)), onEnded: () => void syncVoice(false) }}>{({ boxW, boxH }) => <><audio ref={audioRef} src={voice ? mediaUrl(voice) : undefined} preload="metadata" onLoadedMetadata={() => void syncVoice(!(videoRef.current?.paused ?? true))} /><RegionBox region={region} setRegion={setRegion} videoW={media.width} videoH={media.height} boxW={boxW} boxH={boxH} previewBlur={blurEnabled} active={activeOverlay === 'region'} onActivate={() => setActiveOverlay('region')} />{logoEnabled && logo && <LogoBox src={mediaUrl(logo)} rect={logoRect} setRect={setLogoRect} aspect={logoAspect} videoW={media.width} videoH={media.height} boxW={boxW} boxH={boxH} active={activeOverlay === 'logo'} onActivate={() => setActiveOverlay('logo')} />}</>}</VideoStage>
+           <div className="overlay-selector" role="group" aria-label="Chọn lớp phủ cần chỉnh sửa"><button type="button" className={`btn ${activeOverlay === 'region' ? 'active' : ''}`} aria-pressed={activeOverlay === 'region'} onClick={() => setActiveOverlay('region')}>Vùng chữ</button><button type="button" className={`btn ${activeOverlay === 'logo' ? 'active' : ''}`} aria-pressed={activeOverlay === 'logo'} disabled={!logoEnabled || !logo} onClick={() => setActiveOverlay('logo')}>Logo</button></div>
+           <VideoStage path={video} media={media} videoRef={videoRef} videoProps={{ controls: true, onLoadedMetadata: () => { const element = videoRef.current; if (element) setVideoSeconds(Number.isFinite(element.duration) ? element.duration : 0) }, onError: () => setGhepLoi('Không mở được video này.'), onPlay: () => void syncVoice(true), onPause: () => void syncVoice(false), onTimeUpdate: () => void syncVoice(!(videoRef.current?.paused ?? true), false), onWaiting: () => void syncVoice(false), onStalled: () => void syncVoice(false), onPlaying: () => void syncVoice(!(videoRef.current?.paused ?? true)), onCanPlay: () => void syncVoice(!(videoRef.current?.paused ?? true)), onSeeking: () => void syncVoice(false), onSeeked: () => void syncVoice(!(videoRef.current?.paused ?? true)), onRateChange: () => void syncVoice(!(videoRef.current?.paused ?? true)), onEnded: () => void syncVoice(false) }}>{({ boxW, boxH }) => <><audio ref={audioRef} src={voice ? mediaUrl(voice) : undefined} preload="metadata" onLoadedMetadata={() => void syncVoice(!(videoRef.current?.paused ?? true))} />{blurEnabled && blurRegions.map((item, index) => <RegionBox key={item.id} region={item} setRegion={(next) => updateBlurRegion(item.id, next)} videoW={media.width} videoH={media.height} boxW={boxW} boxH={boxH} previewBlur showMask={activeBlurId === item.id} active={activeBlurId === item.id} onActivate={() => setActiveBlurId(item.id)} label={`Vùng mờ ${index + 1}`} />)}{subtitleEnabled && ghepMode === 'burn' && <RegionBox region={region} setRegion={setRegion} videoW={media.width} videoH={media.height} boxW={boxW} boxH={boxH} showMask={false} active={activeOverlay === 'region'} onActivate={() => setActiveOverlay('region')} label="Vùng đặt phụ đề" />}{logoEnabled && logo && <LogoBox src={mediaUrl(logo)} rect={logoRect} setRect={setLogoRect} aspect={logoAspect} videoW={media.width} videoH={media.height} boxW={boxW} boxH={boxH} active={activeOverlay === 'logo'} onActivate={() => setActiveOverlay('logo')} />}</>}</VideoStage>
           <div className="muted small ocr-toado">Video {media.width}×{media.height} · X: {region.x0} → {region.x1} px | Y: {region.y0} → {region.y1} px</div>
         </> : <div className="ocr-sanh"><div className="muted small">Chưa chọn video — bấm “Chọn video” bên trái.</div></div>}
       </div>
