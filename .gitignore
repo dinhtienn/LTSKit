@@ -6,7 +6,6 @@ appdata/
 .worktrees/
 .history/
 .superpowers/
-cockpit-tools/
 docs/
 tests/
 
@@ -37,3 +36,5 @@ Downloaded/
 !.vscode/extensions.json
 ROADMAP.md
 run.bat
+
+reference/
