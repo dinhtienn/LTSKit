@@ -46,16 +46,12 @@ export async function probeMedia(path: string): Promise<MediaProbe> {
 }
 
 export async function probeMediaWithFfmpeg(ffmpeg: string, path: string): Promise<MediaProbe> {
-  const raw = await spawnText(ffprobePath(ffmpeg), [
-    '-v', 'error', '-show_streams', '-show_format', '-of', 'json', path
-  ])
+  const raw = await spawnText(ffprobePath(ffmpeg), ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', path])
   return parseMediaProbe(raw)
 }
 
 export async function probeAsset(ffmpeg: string, path: string): Promise<AssetProbe> {
-  const raw = await spawnText(ffprobePath(ffmpeg), [
-    '-v', 'error', '-show_streams', '-show_format', '-of', 'json', path
-  ])
+  const raw = await spawnText(ffprobePath(ffmpeg), ['-v', 'error', '-show_streams', '-show_format', '-of', 'json', path])
   return parseAssetProbe(raw)
 }
 
@@ -90,17 +86,18 @@ function decodeWithFfmpeg(ffmpeg: string, args: string[]): Promise<boolean> {
 }
 
 export function decodeAuxiliaryAsset(ffmpeg: string, kind: AuxiliaryAssetKind, path: string): Promise<boolean> {
-  const selection = kind === 'voice'
-    ? ['-map', '0:a:0', '-t', '1']
-    : ['-map', '0:v:0', '-frames:v', '1']
-  return decodeWithFfmpeg(ffmpeg, [
-    '-v', 'error', '-i', path, ...selection, '-f', 'null', '-'
-  ])
+  const selection = kind === 'voice' ? ['-map', '0:a:0', '-t', '1'] : ['-map', '0:v:0', '-frames:v', '1']
+  return decodeWithFfmpeg(ffmpeg, ['-v', 'error', '-i', path, ...selection, '-f', 'null', '-'])
 }
 
 export function parseAssetProbe(raw: string): AssetProbe {
   let data: {
-    streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string }>
+    streams?: Array<{
+      codec_type?: string
+      width?: number
+      height?: number
+      duration?: string
+    }>
     format?: { duration?: string }
   }
   try {
@@ -109,15 +106,14 @@ export function parseAssetProbe(raw: string): AssetProbe {
     throw new Error('Dữ liệu ffprobe không hợp lệ.')
   }
   const audio = data.streams?.find((stream) => stream.codec_type === 'audio')
-  const visual = data.streams?.find((stream) =>
-    stream.codec_type === 'video' && Number.isFinite(stream.width) && (stream.width ?? 0) > 0 &&
-    Number.isFinite(stream.height) && (stream.height ?? 0) > 0
+  const visual = data.streams?.find(
+    (stream) =>
+      stream.codec_type === 'video' && Number.isFinite(stream.width) && (stream.width ?? 0) > 0 && Number.isFinite(stream.height) && (stream.height ?? 0) > 0
   )
   const formatDuration = Number(data.format?.duration)
   const streamDuration = Number(audio?.duration)
-  const audioDuration = Number.isFinite(formatDuration) && formatDuration > 0
-    ? formatDuration
-    : Number.isFinite(streamDuration) && streamDuration > 0 ? streamDuration : null
+  const audioDuration =
+    Number.isFinite(formatDuration) && formatDuration > 0 ? formatDuration : Number.isFinite(streamDuration) && streamDuration > 0 ? streamDuration : null
   return {
     hasAudio: !!audio,
     audioDuration,
@@ -130,10 +126,7 @@ export function logoDimensionsFromAsset(asset: AssetProbe): LogoDimensions {
   return asset.visual
 }
 
-export function validateComposerAssets(
-  req: BurnReq,
-  assets: { voice: AssetProbe | null; logo: AssetProbe | null }
-): string | null {
+export function validateComposerAssets(req: BurnReq, assets: { voice: AssetProbe | null; logo: AssetProbe | null }): string | null {
   if (req.voice && (!assets.voice?.hasAudio || assets.voice.audioDuration == null)) {
     return 'File voice không tồn tại, không đọc được hoặc không có âm thanh hợp lệ.'
   }
@@ -189,17 +182,19 @@ export function parseMediaProbe(raw: string): MediaProbe {
     throw new Error('Không đọc được thông tin video hợp lệ. Hãy chọn một tệp video khác.')
   }
 
-  const video = data.streams?.find((stream) =>
-    stream.codec_type === 'video' && stream.disposition?.attached_pic !== 1
-  )
+  const video = data.streams?.find((stream) => stream.codec_type === 'video' && stream.disposition?.attached_pic !== 1)
   const formatDuration = Number(data.format?.duration)
   const streamDuration = Number(video?.duration)
-  const duration = Number.isFinite(formatDuration) && formatDuration > 0
-    ? formatDuration
-    : streamDuration
-  if (!video || !Number.isFinite(video.width) || (video.width ?? 0) <= 0 ||
-    !Number.isFinite(video.height) || (video.height ?? 0) <= 0 ||
-    !Number.isFinite(duration) || duration <= 0) {
+  const duration = Number.isFinite(formatDuration) && formatDuration > 0 ? formatDuration : streamDuration
+  if (
+    !video ||
+    !Number.isFinite(video.width) ||
+    (video.width ?? 0) <= 0 ||
+    !Number.isFinite(video.height) ||
+    (video.height ?? 0) <= 0 ||
+    !Number.isFinite(duration) ||
+    duration <= 0
+  ) {
     throw new Error('Không đọc được thông tin video hợp lệ. Hãy chọn một tệp video khác.')
   }
 
@@ -219,9 +214,9 @@ export function parseMediaProbe(raw: string): MediaProbe {
 function validRect(rect: VideoRect | null | undefined, meta: MediaProbe): boolean {
   if (!rect) return false
   const values = [rect.x0, rect.x1, rect.y0, rect.y1]
-  return values.every(Number.isFinite) &&
-    rect.x0 >= 0 && rect.y0 >= 0 && rect.x1 > rect.x0 && rect.y1 > rect.y0 &&
-    rect.x1 <= meta.width && rect.y1 <= meta.height
+  return (
+    values.every(Number.isFinite) && rect.x0 >= 0 && rect.y0 >= 0 && rect.x1 > rect.x0 && rect.y1 > rect.y0 && rect.x1 <= meta.width && rect.y1 <= meta.height
+  )
 }
 
 function effectiveBlurRegions(req: BurnReq): BlurRegion[] {
@@ -230,15 +225,67 @@ function effectiveBlurRegions(req: BurnReq): BlurRegion[] {
   return []
 }
 
+const COLOR = /^#[0-9a-f]{3}(?:[0-9a-f]{3})?$/i
+
+function validPercent(value: number): boolean {
+  return Number.isFinite(value) && value >= 0 && value <= 100
+}
+
+function validateTextOverlays(req: BurnReq, meta: MediaProbe): string | null {
+  const overlays = req.textOverlays ?? []
+  if (overlays.length > 20) return 'Chỉ được thêm tối đa 20 text.'
+  for (const [index, item] of overlays.entries()) {
+    const label = `Text ${index + 1}`
+    if (!item.text.trim()) return `${label}: nội dung không được để trống.`
+    if (!validRect(item.rect, meta)) return `${label}: vùng hiển thị không hợp lệ.`
+    if (!Number.isFinite(item.fontSize) || item.fontSize <= 0) return `${label}: cỡ chữ không hợp lệ.`
+    if (![item.textColor, item.outlineColor, item.bgColor].every((color) => COLOR.test(color))) {
+      return `${label}: màu không hợp lệ.`
+    }
+    if (!validPercent(item.textOpacity) || !validPercent(item.bgOpacity)) {
+      return `${label}: độ mờ không hợp lệ.`
+    }
+    if (!Number.isFinite(item.outlinePx) || item.outlinePx < 0 || item.outlinePx > 8) {
+      return `${label}: độ dày viền không hợp lệ.`
+    }
+    if (
+      !Number.isFinite(item.startSec) ||
+      item.startSec < 0 ||
+      (item.endSec != null && (!Number.isFinite(item.endSec) || item.endSec <= item.startSec || item.endSec > meta.duration))
+    ) {
+      return `${label}: thời gian hiển thị không hợp lệ.`
+    }
+  }
+  return null
+}
+
+function validateSubtitleStyle(req: BurnReq): string | null {
+  const style = req.subtitleStyle
+  if (!style) return null
+  if (
+    ![style.textColor, style.outlineColor, style.bgColor].every((color) => COLOR.test(color)) ||
+    !validPercent(style.textOpacity) ||
+    !validPercent(style.bgOpacity) ||
+    !Number.isFinite(style.outlinePx) ||
+    style.outlinePx < 0 ||
+    style.outlinePx > 8
+  ) {
+    return 'Style phụ đề không hợp lệ.'
+  }
+  return null
+}
+
 export function validateBurnRequest(req: BurnReq, meta: MediaProbe): string | null {
-  if (![req.videoVolume, req.voiceVolume].every((value) =>
-    Number.isFinite(value) && value >= 0 && value <= 100
-  )) return 'Âm lượng phải từ 0 đến 100.'
+  if (![req.videoVolume, req.voiceVolume].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) return 'Âm lượng phải từ 0 đến 100.'
   if (req.srt && req.mode !== 'burn' && req.mode !== 'soft') return 'Hãy chọn cách gắn phụ đề.'
   if (req.mode === 'burn' && !req.srt) return 'Cần chọn phụ đề SRT để đốt chữ.'
-  if (req.srt && req.mode === 'burn' && !validRect(req.region, meta)) {
+  if (req.srt && req.mode === 'burn' && !validRect(req.subRegion ?? req.region, meta)) {
     return 'Vùng đặt phụ đề không hợp lệ hoặc nằm ngoài video.'
   }
+  const subtitleStyleError = validateSubtitleStyle(req)
+  if (subtitleStyleError) return subtitleStyleError
+  const textError = validateTextOverlays(req, meta)
+  if (textError) return textError
   const blurRegions = effectiveBlurRegions(req)
   if (req.lamMo && (blurRegions.length === 0 || blurRegions.some((rect) => !validRect(rect, meta)))) {
     return 'vùng làm mờ không hợp lệ hoặc nằm ngoài video.'
@@ -246,7 +293,7 @@ export function validateBurnRequest(req: BurnReq, meta: MediaProbe): string | nu
   if (req.logo && (!req.logo.path || !validRect(req.logo.rect, meta))) {
     return 'Vùng logo không hợp lệ hoặc nằm ngoài video.'
   }
-  const hasOperation = !!req.srt || !!req.lamMo || !!req.voice || !!req.logo || req.videoVolume !== 100
+  const hasOperation = !!req.srt || !!req.lamMo || !!req.voice || !!req.logo || (req.textOverlays?.length ?? 0) > 0 || req.videoVolume !== 100
   if (!hasOperation) return 'Hãy chọn ít nhất một thay đổi để xuất video.'
   return null
 }
@@ -255,11 +302,7 @@ const evenCoordinate = (value: number): number => Math.max(0, Math.floor(value /
 const evenDimension = (value: number): number => Math.max(2, Math.floor(value / 2) * 2)
 const volume = (percent: number): string => Number((percent / 100).toFixed(2)).toString()
 
-export function buildComposerPlan(
-  req: BurnReq,
-  meta: MediaProbe,
-  assName?: string
-): ComposerPlan {
+export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: string): ComposerPlan {
   const inputs: string[] = []
   const addInput = (path: string): number => {
     inputs.push(path)
@@ -300,14 +343,12 @@ export function buildComposerPlan(
     const height = evenDimension(rect.y1 - rect.y0)
     const x = evenCoordinate(rect.x0)
     const y = evenCoordinate(rect.y0)
-    filters.push(
-      `[${logoInput}:v]scale=${width}:${height}[logo]`,
-      `[${videoLabel}][logo]overlay=${x}:${y}[v${++videoStep}]`
-    )
+    filters.push(`[${logoInput}:v]scale=${width}:${height}[logo]`, `[${videoLabel}][logo]overlay=${x}:${y}[v${++videoStep}]`)
     videoLabel = `v${videoStep}`
   }
 
-  if (req.srt && req.mode === 'burn') {
+  const hasBurnAss = (req.srt != null && req.mode === 'burn') || (req.textOverlays?.length ?? 0) > 0
+  if (hasBurnAss) {
     if (!assName || !/^[A-Za-z0-9][A-Za-z0-9._-]*\.ass$/i.test(assName)) {
       throw new Error('Cần tên tệp ASS tạm hợp lệ để đốt phụ đề.')
     }
@@ -315,7 +356,7 @@ export function buildComposerPlan(
     videoLabel = 'vout'
   }
 
-  const changesPixels = videoStep > 0 || (req.srt != null && req.mode === 'burn')
+  const changesPixels = videoStep > 0 || hasBurnAss
   if (changesPixels && videoLabel !== 'vout') filters.push(`[${videoLabel}]null[vout]`)
 
   const changesAudio = voiceInput !== null || req.videoVolume !== 100
@@ -329,10 +370,7 @@ export function buildComposerPlan(
       )
       audioMap = '[aout]'
     } else {
-      filters.push(
-        `[${voiceInput}:a]volume=${volume(req.voiceVolume)}[aout]`,
-        '[aout]apad[aoutp]'
-      )
+      filters.push(`[${voiceInput}:a]volume=${volume(req.voiceVolume)}[aout]`, '[aout]apad[aoutp]')
       audioMap = '[aoutp]'
     }
   } else if (changesAudio && meta.hasAudio) {

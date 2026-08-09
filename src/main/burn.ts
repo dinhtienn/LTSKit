@@ -12,7 +12,7 @@ import {
   validateBurnRequest,
   validateAndDecodeComposerAssets
 } from './videoComposer'
-import type { BurnReq, BurnProgress, BurnResult, CoChu, VideoRect } from '../shared/types'
+import type { BurnReq, BurnProgress, BurnResult, CoChu, SubtitleStyle, TextOverlay, VideoRect } from '../shared/types'
 
 let child: ChildProcess | null = null
 
@@ -131,12 +131,7 @@ const DOC: ThamSo = {
  * Dai mo giu DUNG khung user keo; chu can giua quanh tam dai do va duoc phep
  * tran ra ngoai.
  */
-export function boCuc(
-  meta: Meta,
-  region?: VideoRect | null,
-  coChu?: CoChu,
-  lamMo?: boolean
-): BoCuc {
+export function boCuc(meta: Meta, region?: VideoRect | null, coChu?: CoChu, lamMo?: boolean): BoCuc {
   const co = meta.h > 0 ? meta.h : 720
   const rong = meta.w > 0 ? meta.w : 1280
   // Vuong (1:1) tinh la DOC -> moc theo be rong, dung y do.
@@ -262,13 +257,19 @@ export async function srtGiay(duong: string): Promise<number> {
   }
 }
 
+export async function srtNoiDung(duong: string): Promise<string> {
+  try {
+    return await readFile(duong, 'utf8')
+  } catch {
+    return ''
+  }
+}
+
 /** So giay -> moc .srt "HH:MM:SS,mmm". */
 function mocSrt(s: number): string {
   const ms = Math.max(0, Math.round(s * 1000))
   const p = (n: number, d = 2): string => String(n).padStart(d, '0')
-  return `${p(Math.floor(ms / 3600000))}:${p(Math.floor((ms % 3600000) / 60000))}:${p(
-    Math.floor((ms % 60000) / 1000)
-  )},${p(ms % 1000, 3)}`
+  return `${p(Math.floor(ms / 3600000))}:${p(Math.floor((ms % 3600000) / 60000))}:${p(Math.floor((ms % 60000) / 1000))},${p(ms % 1000, 3)}`
 }
 
 /**
@@ -287,10 +288,7 @@ export function catSrtTheoVideo(cues: SrtCue[], giayVideo: number): string {
     if (batDau >= giayVideo) continue // cau khong bao gio hien -> bo
     const ketThuc = Math.min(srtTimeToSeconds(c.b), giayVideo) // cau vat ngang -> keo ve cuoi video
     if (ketThuc <= batDau) continue
-    ra.push(
-      `${ra.length + 1}\n${mocSrt(batDau)} --> ${mocSrt(ketThuc)}\n` +
-        `${c.chu.split('\\N').join('\n')}\n`
-    )
+    ra.push(`${ra.length + 1}\n${mocSrt(batDau)} --> ${mocSrt(ketThuc)}\n` + `${c.chu.split('\\N').join('\n')}\n`)
   }
   return ra.join('\n')
 }
@@ -303,30 +301,117 @@ function gioAss(t: string): string {
   return `${Number(m[1])}:${m[2]}:${m[3]}.${String(cs).padStart(2, '0')}`
 }
 
+function giayAss(seconds: number): string {
+  const centiseconds = Math.max(0, Math.round(seconds * 100))
+  const hours = Math.floor(centiseconds / 360000)
+  const minutes = Math.floor((centiseconds % 360000) / 6000)
+  const secs = Math.floor((centiseconds % 6000) / 100)
+  const fraction = centiseconds % 100
+  return `${hours}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}.${String(fraction).padStart(2, '0')}`
+}
+
+function assColor(hex: string, opacity = 100): string {
+  const raw = hex.replace(/^#/, '')
+  const full =
+    raw.length === 3
+      ? raw
+          .split('')
+          .map((part) => part + part)
+          .join('')
+      : raw
+  const alpha = Math.round(255 * (1 - Math.max(0, Math.min(100, opacity)) / 100))
+  return `&H${alpha.toString(16).padStart(2, '0')}${full.slice(4, 6)}${full.slice(2, 4)}${full.slice(0, 2)}&`.toUpperCase()
+}
+
+function assText(text: string): string {
+  return text.replace(/[{}]/g, '').replace(/\r\n|\r|\n/g, '\\N')
+}
+
+const FONT_FAMILIES: Record<string, string> = {
+  arial: 'Arial',
+  segoe: 'Segoe UI',
+  times: 'Times New Roman',
+  tahoma: 'Tahoma'
+}
+
 /**
  * .srt -> .ass, ĐẶT PlayResX/Y = KICH THUOC VIDEO. Vi sao KHONG dung filter
  * `subtitles=...:force_style`: no doc .srt voi PlayResY mac dinh (~288) nen
  * FontSize/MarginV (tinh theo pixel video) bi phong ~2.5x va DAT SAI CHO -> chu
  * khong nam trong dai mo. Da do that. Voi PlayRes = video thi moi so la pixel that.
  */
-export function taoAss(cues: SrtCue[], meta: Meta, bc: BoCuc): string {
+export function taoAss(
+  cues: SrtCue[],
+  meta: Meta,
+  bc: BoCuc | null,
+  textOverlays: TextOverlay[] = [],
+  textFontFamily = 'Arial',
+  subtitleStyle?: SubtitleStyle
+): string {
   const w = meta.w > 0 ? meta.w : 1280
   const h = meta.h > 0 ? meta.h : 720
-  const style =
-    `Style: D,Arial,${bc.fontSize},&H00FFFFFF,&H00000000,&H00000000,` +
-    `0,0,0,0,100,100,0,0,1,${bc.vien},0,2,${bc.marginH},${bc.marginH},${bc.marginV},1`
+  const styles: string[] = []
+  const events: string[] = []
 
-  // !! CAN GIUA THAT SU trong dai mo: dat \an5 (tam khoi chu) + \pos ngay giua
-  // dai mo. Vi sao khong tu tinh le day: so dong phai UOC LUONG tu so ky tu, ma
-  // uoc luong khong bao gio chuan — do that mot cau uoc 4 dong nhung libass chi
-  // xuong 3, the la chu dinh xuong day con chua mo o tren. Voi \an5 thi libass
-  // tu biet chu xuong may dong roi can giua dung diem, khoi phu thuoc uoc luong.
-  const dat = bc.tamX != null && bc.tamY != null
-    ? `{\\an5\\pos(${bc.tamX},${bc.tamY})}`
-    : ''
-  const events = cues.map(
-    (c) => `Dialogue: 0,${gioAss(c.a)},${gioAss(c.b)},D,,0,0,0,,${dat}${c.chu}`
-  )
+  if (bc) {
+    const subtitleFont = FONT_FAMILIES[subtitleStyle?.fontId ?? 'arial'] ?? 'Arial'
+    const primary = assColor(subtitleStyle?.textColor ?? '#ffffff', subtitleStyle?.textOpacity ?? 100)
+    const outline = assColor(subtitleStyle?.outlineColor ?? '#000000', 100)
+    const outlinePx = subtitleStyle?.outlinePx ?? bc.vien
+    styles.push(
+      `Style: D,${subtitleFont},${bc.fontSize},${primary},&H00000000&,${outline},&H00000000&,` +
+        `0,0,0,0,100,100,0,0,1,${outlinePx},0,2,${bc.marginH},${bc.marginH},${bc.marginV},1`
+    )
+    if (subtitleStyle?.bgEnabled) {
+      const background = assColor(subtitleStyle.bgColor, subtitleStyle.bgOpacity)
+      styles.push(
+        `Style: DBox,${subtitleFont},${bc.fontSize},&HFF000000&,&H00000000&,${background},&H00000000&,` +
+          `0,0,0,0,100,100,0,0,3,8,0,2,${bc.marginH},${bc.marginH},${bc.marginV},1`
+      )
+    }
+
+    const dat = bc.tamX != null && bc.tamY != null ? `{\\an5\\pos(${bc.tamX},${bc.tamY})}` : ''
+    for (const cue of cues) {
+      if (subtitleStyle?.bgEnabled) {
+        events.push(`Dialogue: 0,${gioAss(cue.a)},${gioAss(cue.b)},DBox,,0,0,0,,${dat}${cue.chu}`)
+        events.push(`Dialogue: 1,${gioAss(cue.a)},${gioAss(cue.b)},D,,0,0,0,,${dat}${cue.chu}`)
+      } else {
+        events.push(`Dialogue: 0,${gioAss(cue.a)},${gioAss(cue.b)},D,,0,0,0,,${dat}${cue.chu}`)
+      }
+    }
+  }
+
+  for (const [index, item] of textOverlays.entries()) {
+    const name = `Text${index}`
+    const primary = assColor(item.textColor, item.textOpacity)
+    const outline = assColor(item.outlineColor, 100)
+    const marginLeft = Math.round(item.rect.x0)
+    const marginRight = Math.round(w - item.rect.x1)
+    styles.push(
+      `Style: ${name},${textFontFamily},${item.fontSize},${primary},&H00000000&,${outline},&H00000000&,` +
+        `0,0,0,0,100,100,0,0,1,${item.outlinePx},0,5,${marginLeft},${marginRight},0,1`
+    )
+    if (item.bgEnabled) {
+      const boxName = `${name}Box`
+      const background = assColor(item.bgColor, item.bgOpacity)
+      styles.push(
+        `Style: ${boxName},${textFontFamily},${item.fontSize},&HFF000000&,&H00000000&,${background},&H00000000&,` +
+          `0,0,0,0,100,100,0,0,3,8,0,5,${marginLeft},${marginRight},0,1`
+      )
+    }
+    const x = Math.round((item.rect.x0 + item.rect.x1) / 2)
+    const y = Math.round((item.rect.y0 + item.rect.y1) / 2)
+    const position = `{\\an5\\pos(${x},${y})}`
+    const start = giayAss(item.startSec)
+    const end = giayAss(item.endSec ?? meta.giay)
+    const text = assText(item.text)
+    if (item.bgEnabled) {
+      events.push(`Dialogue: 0,${start},${end},${name}Box,,0,0,0,,${position}${text}`)
+      events.push(`Dialogue: 1,${start},${end},${name},,0,0,0,,${position}${text}`)
+    } else {
+      events.push(`Dialogue: 0,${start},${end},${name},,0,0,0,,${position}${text}`)
+    }
+  }
 
   return [
     '[Script Info]',
@@ -339,8 +424,8 @@ export function taoAss(cues: SrtCue[], meta: Meta, bc: BoCuc): string {
     'WrapStyle: 0',
     '',
     '[V4+ Styles]',
-    'Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    style,
+    'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
+    ...styles,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text',
@@ -350,13 +435,7 @@ export function taoAss(cues: SrtCue[], meta: Meta, bc: BoCuc): string {
 }
 
 /** Chay 1 lan ffmpeg, bao tien do theo `time=` tren stderr. */
-async function chay(
-  ff: string,
-  args: string[],
-  cwd: string,
-  meta: Meta,
-  onProgress: (p: BurnProgress) => void
-): Promise<number | null> {
+async function chay(ff: string, args: string[], cwd: string, meta: Meta, onProgress: (p: BurnProgress) => void): Promise<number | null> {
   return new Promise((resolve) => {
     const p = spawn(ff, args, { cwd, windowsHide: true })
     child = p
@@ -373,7 +452,9 @@ async function chay(
       const m = /time=(\d+):(\d+):(\d+\.\d+)/.exec(s)
       if (m && meta.giay > 0) {
         const sec = Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3])
-        onProgress({ percent: Math.min(99, Math.round((sec / meta.giay) * 100)) })
+        onProgress({
+          percent: Math.min(99, Math.round((sec / meta.giay) * 100))
+        })
       }
       const last = s.trim().split(/\r?\n/).filter(Boolean).slice(-1)[0]
       if (last) errTail = last
@@ -404,10 +485,7 @@ async function duLon(f: string): Promise<boolean> {
  *  - 'burn': dot chet vao pixel (dang lai) + che phu de goc bang BLUR (kinh mo).
  * Encoder: thu h264_nvenc (GPU) -> tut libx264 (nvenc de chet vi driver, ra 0 byte).
  */
-export async function burnSubtitle(
-  req: BurnReq,
-  onProgress: (p: BurnProgress) => void
-): Promise<BurnResult> {
+export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) => void): Promise<BurnResult> {
   if (!burnLifecycle.start()) return { ok: false, error: 'Đang xử lý một video khác.' }
   let tam: string | null = null
   try {
@@ -432,21 +510,29 @@ export async function burnSubtitle(
     try {
       if (req.voice) voiceProbe = await probeAsset(ff, req.voice)
     } catch {
-      return { ok: false, error: 'File voice không tồn tại, không đọc được hoặc không có âm thanh hợp lệ.' }
+      return {
+        ok: false,
+        error: 'File voice không tồn tại, không đọc được hoặc không có âm thanh hợp lệ.'
+      }
     }
     try {
       if (req.logo) logoProbe = await probeAsset(ff, req.logo.path)
     } catch {
-      return { ok: false, error: 'File logo không tồn tại hoặc không đọc được hình ảnh hợp lệ.' }
+      return {
+        ok: false,
+        error: 'File logo không tồn tại hoặc không đọc được hình ảnh hợp lệ.'
+      }
     }
-    const assetError = await validateAndDecodeComposerAssets(
-      req,
-      { voice: voiceProbe, logo: logoProbe },
-      (kind, path) => decodeAuxiliaryAsset(ff, kind, path)
-    )
+    const assetError = await validateAndDecodeComposerAssets(req, { voice: voiceProbe, logo: logoProbe }, (kind, path) => decodeAuxiliaryAsset(ff, kind, path))
     if (assetError) return { ok: false, error: assetError }
-    const meta: Meta = { w: probe.width, h: probe.height, giay: probe.duration }
+    const meta: Meta = {
+      w: probe.width,
+      h: probe.height,
+      giay: probe.duration
+    }
     let composerReq = req
+    const textOverlays = req.textOverlays ?? []
+    const hasBurnAss = (Boolean(req.srt) && req.mode === 'burn') || textOverlays.length > 0
 
     if (req.srt) {
       await copyFile(req.srt, srtTam)
@@ -456,11 +542,14 @@ export async function burnSubtitle(
         logInfo('Dịch màn hình: đã cắt phụ đề cho vừa độ dài video.')
       }
       composerReq = { ...req, srt: 'sub.srt' }
-      if (req.mode === 'burn') {
-        const cues = docSrt(await readFile(srtTam, 'utf8'))
-        const bc = boCuc(meta, req.region, req.coChu, req.lamMo)
-        await writeFile(assTam, taoAss(cues, meta, bc), 'utf8')
-      }
+    }
+
+    if (hasBurnAss) {
+      const cues = req.srt && req.mode === 'burn' ? docSrt(await readFile(srtTam, 'utf8')) : []
+      const subRect = req.subRegion ?? req.region
+      const bc = cues.length > 0 ? boCuc(meta, subRect, req.coChu, false) : null
+      const textFontFamily = FONT_FAMILIES[req.textFontId ?? 'arial'] ?? 'Arial'
+      await writeFile(assTam, taoAss(cues, meta, bc, textOverlays, textFontFamily, req.subtitleStyle), 'utf8')
     }
 
     const plan = buildComposerPlan(composerReq, probe, 'sub.ass')
@@ -475,17 +564,31 @@ export async function burnSubtitle(
     if (plan.softSubtitleInput !== null) {
       commonArgs.push('-c:s', 'mov_text', '-metadata:s:s:0', 'language=vie')
     }
-    commonArgs.push(...(plan.changesAudio
-      ? ['-c:a', 'aac', '-b:a', '192k']
-      : ['-c:a', 'copy']))
+    commonArgs.push(...(plan.changesAudio ? ['-c:a', 'aac', '-b:a', '192k'] : ['-c:a', 'copy']))
     commonArgs.push('-t', String(meta.giay))
 
     const encoders: Array<{ ten: string; gpu: boolean; args: string[] }> = plan.changesPixels
       ? [
-          { ten: 'h264_nvenc', gpu: true, args: ['-c:v', 'h264_nvenc', '-preset', 'p4', '-cq', '23'] },
-          { ten: 'h264_amf', gpu: true, args: ['-c:v', 'h264_amf', '-quality', 'balanced', '-rc', 'cqp', '-qp_i', '23', '-qp_p', '23'] },
-          { ten: 'h264_qsv', gpu: true, args: ['-c:v', 'h264_qsv', '-global_quality', '23'] },
-          { ten: 'libx264', gpu: false, args: ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20'] }
+          {
+            ten: 'h264_nvenc',
+            gpu: true,
+            args: ['-c:v', 'h264_nvenc', '-preset', 'p4', '-cq', '23']
+          },
+          {
+            ten: 'h264_amf',
+            gpu: true,
+            args: ['-c:v', 'h264_amf', '-quality', 'balanced', '-rc', 'cqp', '-qp_i', '23', '-qp_p', '23']
+          },
+          {
+            ten: 'h264_qsv',
+            gpu: true,
+            args: ['-c:v', 'h264_qsv', '-global_quality', '23']
+          },
+          {
+            ten: 'libx264',
+            gpu: false,
+            args: ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20']
+          }
         ]
       : [{ ten: 'copy', gpu: false, args: ['-c:v', 'copy'] }]
 
@@ -543,12 +646,13 @@ export async function promoteOutput(
   cancellation: (() => boolean) | PromotionControl = () => false,
   hooks: PromotionHooks = {}
 ): Promise<'committed' | 'cancelled'> {
-  const control: PromotionControl = typeof cancellation === 'function'
-    ? {
-        isCancelled: cancellation,
-        beginCommit: () => !cancellation()
-      }
-    : cancellation
+  const control: PromotionControl =
+    typeof cancellation === 'function'
+      ? {
+          isCancelled: cancellation,
+          beginCommit: () => !cancellation()
+        }
+      : cancellation
   const backup = `${destination}.backup-${randomUUID()}`
   let hasBackup = false
   let promoted = false

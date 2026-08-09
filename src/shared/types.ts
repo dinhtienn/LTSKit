@@ -227,6 +227,33 @@ export interface BlurRegion extends VideoRect {
   id: string
 }
 
+export interface TextOverlay {
+  id: string
+  text: string
+  rect: VideoRect
+  fontSize: number
+  textColor: string
+  textOpacity: number
+  outlineColor: string
+  outlinePx: number
+  bgEnabled: boolean
+  bgColor: string
+  bgOpacity: number
+  startSec: number
+  endSec: number | null
+}
+
+export interface SubtitleStyle {
+  fontId: string | null
+  textColor: string
+  textOpacity: number
+  outlineColor: string
+  outlinePx: number
+  bgEnabled: boolean
+  bgColor: string
+  bgOpacity: number
+}
+
 export interface LogoOverlay {
   path: string
   rect: VideoRect
@@ -250,6 +277,10 @@ export interface BurnReq {
   srt?: string | null
   mode?: 'burn' | 'soft'
   region?: VideoRect | null
+  subRegion?: VideoRect | null
+  subtitleStyle?: SubtitleStyle
+  textFontId?: string | null
+  textOverlays?: TextOverlay[]
   blurRegions?: BlurRegion[]
   lamMo?: boolean
   coChu?: CoChu
@@ -348,7 +379,6 @@ export interface CapcutSrtRequest extends VieneuSrtRequest {
   profileCount: number
 }
 
-
 /** Ket qua kiem tra API key. `message` di THANG len UI — khong duoc mang chi
  *  tiet ky thuat nao. */
 export interface GeminiStatus {
@@ -376,9 +406,7 @@ export interface GeminiReadiness {
   hasModels: boolean
 }
 
-export type GeminiModelDiscovery =
-  | { ok: true; models: string[] }
-  | { ok: false; error: string }
+export type GeminiModelDiscovery = { ok: true; models: string[] } | { ok: false; error: string }
 
 export interface GeminiTranslationResult {
   ok: boolean
@@ -456,12 +484,7 @@ export interface CookieProfile {
   count: number
 }
 
-export type CookieInstallPhase =
-  | 'checking'
-  | 'installing-playwright'
-  | 'installing-chromium'
-  | 'done'
-  | 'error'
+export type CookieInstallPhase = 'checking' | 'installing-playwright' | 'installing-chromium' | 'done' | 'error'
 
 export interface CookieInstallProgress {
   phase: CookieInstallPhase

@@ -192,6 +192,7 @@ const api = {
   burnCancel: (): Promise<void> => ipcRenderer.invoke('burn:cancel'),
   /** Do dai file .srt (giay) — de canh bao khi lech han so voi video. */
   srtGiay: (duong: string): Promise<number> => ipcRenderer.invoke('burn:srtGiay', duong),
+  srtNoiDung: (duong: string): Promise<string> => ipcRenderer.invoke('burn:srtNoiDung', duong),
   onBurnProgress: (cb: (p: BurnProgress) => void): (() => void) => {
     const listener = (_e: unknown, p: BurnProgress): void => cb(p)
     ipcRenderer.on('burn:progress', listener)

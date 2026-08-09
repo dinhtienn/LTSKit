@@ -47,7 +47,7 @@ import { checkKey, hasKey, saveKey, translateSrt } from './gemini'
 import { addKey, getKey, listKeys, removeKey } from './geminiStore'
 import { discoverModels, geminiReadiness, loadModelPool, saveModelPool } from './geminiModels'
 import { cancelOcr, installOcrEngine, ocrEngineStatus, ocrVideo } from './ocr'
-import { burnSubtitle, cancelBurn, srtGiay } from './burn'
+import { burnSubtitle, cancelBurn, srtGiay, srtNoiDung } from './burn'
 import { probeLogoDimensions, probeMedia } from './videoComposer'
 import {
   addVieneuClonedVoice,
@@ -479,6 +479,7 @@ function registerIpc(): void {
   ipcMain.handle('burn:cancel', async () => cancelBurn())
   // Do do dai file .srt -> renderer canh bao khi lech han so voi video
   ipcMain.handle('burn:srtGiay', async (_e, duong: string) => srtGiay(duong))
+  ipcMain.handle('burn:srtNoiDung', async (_e, duong: string) => srtNoiDung(duong))
 
   // ---- Dich phu de bang API key cua user ----
   ipcMain.handle('gemini:hasKey', async () => hasKey())
