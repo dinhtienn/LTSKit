@@ -16,6 +16,11 @@ files:
   - '!.release-assets/**'
   - '!dist/**'
   - '!src/*'
+  - '!reference/**'
+  - '!tests/**'
+  - '!docs/**'
+  - '!cloud/**'
+  - '!*.ipynb'
   - '!electron.vite.config.{js,ts,mjs,cjs}'
   - '!{.eslintignore,.eslintrc.cjs,.prettierignore,.prettierrc.yaml,tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
 win:
