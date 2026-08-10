@@ -939,6 +939,28 @@ select {
   padding: 0.12em 0.25em;
   border-radius: 0.15em;
 }
+
+.queue-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.queue-row-select {
+  margin: 0;
+}
+
+.queue-select-cell {
+  flex: 0 0 24px;
+  display: grid;
+  place-items: center;
+}
+
+.qrow.not-selected {
+  opacity: 0.62;
+}
 .blur-region-list { display: grid; gap: 4px; margin-top: 8px; }
 .blur-region-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; }
 .blur-region-item.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }

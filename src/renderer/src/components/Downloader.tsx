@@ -16,12 +16,13 @@ import {
   createDouyinQueueItem,
   dispatchQueueItem,
   replaceQueuePlaceholder,
-  runnableQueueItems,
+  selectedRunnableQueueItems,
   type DouyinOptions,
   type DouyinQueueItem,
   type GenericQueueItem,
   type UnifiedQueueItem
 } from '../lib/unifiedDownloadQueue'
+import { queueSelectionState, toggleAllQueueItems } from '../lib/queueSelection'
 import LinkInput from './LinkInput'
 import RunControls from './RunControls'
 
@@ -230,7 +231,7 @@ export default function Downloader({
   }
 
   const makeGenericPlaceholder = (url: string): GenericQueueItem => ({
-    id: crypto.randomUUID(), engine: 'generic', url, title: url, info: null, status: 'fetching',
+    id: crypto.randomUUID(), engine: 'generic', url, title: url, info: null, status: 'fetching', selected: true,
     progress: null, result: null, error: null, formatId: null, formatLabel: null, subfolder: null
   })
 
@@ -397,6 +398,7 @@ export default function Downloader({
       title: e.title,
       info: null,
       status: 'ready',
+      selected: true,
       progress: null,
       result: null,
       error: null,
@@ -465,6 +467,7 @@ export default function Downloader({
             ? {
                 ...current,
                 status: result.ok ? 'done' : 'error',
+                selected: result.ok ? false : true,
                 result: 'success' in result ? result : current.result,
                 success: 'success' in result ? result.success : current.success,
                 error: result.ok ? null : result.error
@@ -480,6 +483,7 @@ export default function Downloader({
     const result = await dispatchQueueItem(it, request, outputDir, window.api)
     patch(it.id, {
       status: result.ok ? 'done' : 'error',
+      selected: result.ok ? false : true,
       result: 'file' in result ? result : null,
       error: result.ok ? null : result.error
     })
@@ -496,7 +500,7 @@ export default function Downloader({
         )
       )
     }
-    const queue = runnableQueueItems(items, hasEngine === true)
+    const queue = selectedRunnableQueueItems(items, hasEngine === true)
     void runner.run(queue, runItem)
   }
 
@@ -522,7 +526,11 @@ export default function Downloader({
     setChannels(await window.api.dyRemoveChannel(url))
   }
 
-  const pending = runnableQueueItems(items, hasEngine === true).length
+  const pending = selectedRunnableQueueItems(items, hasEngine === true).length
+  const selectionState = queueSelectionState(items, new Set(['downloading']))
+  const toggleAll = (): void => {
+    setItems((current) => toggleAllQueueItems(current, selectionState !== 'all', new Set(['downloading'])))
+  }
   const done = items.filter((it) => it.status === 'done').length
   const failed = items.filter((it) => it.status === 'error').length
   const classifiedInput = classifyDownloadInput(urlInput).urls
@@ -822,12 +830,13 @@ export default function Downloader({
               {items.length} mục · {done} xong{failed > 0 ? ` · ${failed} lỗi` : ''}
             </div>
             <div className="queue-actions">
+              <QueueSelectAll state={selectionState} onToggle={toggleAll} />
               <button className="btn" onClick={clearAll} disabled={runner.active}>
                 Xóa hết
               </button>
               <RunControls
                 runState={runner.runState}
-                startLabel={`Tải tất cả (${pending})`}
+                startLabel={`Tải đã chọn (${pending})`}
                 canStart={pending > 0 && !!outputDir}
                 onStart={startRun}
                 onPause={runner.pause}
@@ -847,12 +856,13 @@ export default function Downloader({
                   selHeight={height}
                   folderMode={folderMode}
                   onRemove={() => removeItem(it.id)}
+                  onSelectedChange={(selected) => patch(it.id, { selected })}
                   onPickFormat={() => openFormatPicker(it)}
                   onClearFormat={() => clearFormat(it.id)}
                   onGetSub={onGetSub}
                 />
               ) : (
-                <DouyinQueueRow key={it.id} item={it} onRemove={() => removeItem(it.id)} />
+                <DouyinQueueRow key={it.id} item={it} onRemove={() => removeItem(it.id)} onSelectedChange={(selected) => patch(it.id, { selected })} />
               )
             )}
           </div>
@@ -1206,6 +1216,7 @@ function QueueRow({
   selHeight,
   folderMode,
   onRemove,
+  onSelectedChange,
   onPickFormat,
   onClearFormat,
   onGetSub
@@ -1215,6 +1226,7 @@ function QueueRow({
   selHeight: number | null
   folderMode: FolderMode
   onRemove: () => void
+  onSelectedChange: (selected: boolean) => void
   onPickFormat: () => void
   onClearFormat: () => void
   onGetSub: (filePath: string) => void
@@ -1246,7 +1258,10 @@ function QueueRow({
       : null
 
   return (
-    <div className={`qrow ${item.status}`}>
+    <div className={`qrow ${item.status} ${item.selected ? 'selected' : 'not-selected'}`}>
+      <div className="queue-select-cell">
+        <input className="queue-row-select" type="checkbox" checked={item.selected} disabled={item.status === 'downloading'} onChange={(event) => onSelectedChange(event.target.checked)} aria-label={`Chọn ${title}`} />
+      </div>
       <div className="qthumb">
         {item.info?.thumbnail ? (
           <img src={item.info.thumbnail} alt="" />
@@ -1351,12 +1366,18 @@ function QueueRow({
   )
 }
 
+function QueueSelectAll({ state, onToggle }: { state: 'none' | 'some' | 'all'; onToggle: () => void }): JSX.Element {
+  return <label className="queue-select-all"><input type="checkbox" checked={state === 'all'} ref={(element) => { if (element) element.indeterminate = state === 'some' }} onChange={onToggle} /> Chọn tất cả</label>
+}
+
 function DouyinQueueRow({
   item,
-  onRemove
+  onRemove,
+  onSelectedChange
 }: {
   item: DouyinQueueItem
   onRemove: () => void
+  onSelectedChange: (selected: boolean) => void
 }): JSX.Element {
   const mode = item.request.mode === 'all' ? 'Tất cả' : item.request.mode === 'batch' ? `Theo đợt ${item.request.batchSize}` : 'Chỉ video mới'
   const label = item.status === 'downloading'
@@ -1369,7 +1390,10 @@ function DouyinQueueRow({
           ? `Lỗi: ${item.error ?? ''}`
           : 'Chờ tải'
   return (
-    <div className={`qrow ${item.status}`}>
+    <div className={`qrow ${item.status} ${item.selected ? 'selected' : 'not-selected'}`}>
+      <div className="queue-select-cell">
+        <input className="queue-row-select" type="checkbox" checked={item.selected} disabled={item.status === 'downloading'} onChange={(event) => onSelectedChange(event.target.checked)} aria-label={`Chọn ${item.title}`} />
+      </div>
       <div className="qmain">
         <div className="qtitle" title={item.url}>
           {item.request.isChannel ? '📺 ' : '🎬 '}

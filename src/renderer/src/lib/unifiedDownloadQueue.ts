@@ -12,6 +12,7 @@ export type UnifiedItemStatus = 'fetching' | 'ready' | 'blocked' | 'downloading'
 
 export interface GenericQueueItem {
   id: string
+  selected: boolean
   engine: 'generic'
   url: string
   title: string
@@ -27,6 +28,7 @@ export interface GenericQueueItem {
 
 export interface DouyinQueueItem {
   id: string
+  selected: boolean
   engine: 'douyin'
   url: string
   title: string
@@ -61,6 +63,7 @@ export function createDouyinQueueItem(
 ): DouyinQueueItem {
   return {
     id,
+    selected: true,
     engine: 'douyin',
     url,
     title: url,
@@ -98,9 +101,13 @@ export function runnableQueueItems(
 ): UnifiedQueueItem[] {
   return items.filter(
     (item) =>
-      (item.status === 'ready' || item.status === 'error' || item.status === 'blocked') &&
+      (item.status === 'ready' || item.status === 'error' || item.status === 'blocked' || item.status === 'done') &&
       (item.engine === 'generic' || hasDouyinEngine)
   )
+}
+
+export function selectedRunnableQueueItems(items: UnifiedQueueItem[], hasDouyinEngine: boolean): UnifiedQueueItem[] {
+  return runnableQueueItems(items.filter((item) => item.selected), hasDouyinEngine)
 }
 
 export function dispatchQueueItem(

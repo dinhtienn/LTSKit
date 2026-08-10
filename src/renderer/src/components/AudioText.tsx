@@ -4,6 +4,7 @@ import type { GpuInfo, WhisperRequest } from '../../../shared/types'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
 import { useQueueRunner } from '../lib/useQueueRunner'
+import { queueSelectionState, selectedQueueItems, toggleAllQueueItems } from '../lib/queueSelection'
 import RunControls from './RunControls'
 import TranslationControl from './TranslationControl'
 
@@ -11,6 +12,7 @@ type ItemStatus = 'queued' | 'running' | 'translating' | 'done' | 'error'
 
 interface WhItem {
   id: string
+  selected: boolean
   input: string
   name: string
   status: ItemStatus
@@ -138,7 +140,8 @@ export default function AudioText({
                     : p.status === 'error'
                       ? 'error'
                       : 'running',
-                error: p.status === 'error' ? p.line : it.error
+                error: p.status === 'error' ? p.line : it.error,
+                selected: p.status === 'finished' ? false : p.status === 'error' ? true : it.selected
               }
             : it
         )
@@ -162,6 +165,7 @@ export default function AudioText({
       .filter((p) => p && p.trim())
       .map((p) => ({
         id: crypto.randomUUID(),
+        selected: true,
         input: p,
         name: baseName(p),
         status: 'queued',
@@ -223,13 +227,13 @@ export default function AudioText({
 
   const runItem = async (it: WhItem, waitForTranslation = true): Promise<void> => {
     setItems((prev) =>
-      prev.map((x) => (x.id === it.id ? { ...x, status: 'running', percent: 0, error: null } : x))
+      prev.map((x) => (x.id === it.id ? { ...x, selected: x.selected, status: 'running', percent: 0, error: null, outputs: [], speakers: 0, translationVerified: null } : x))
     )
     if (it.kind === 'srt') {
       if (translationTarget === 'none') {
         setItems((prev) =>
           prev.map((x) =>
-            x.id === it.id ? { ...x, status: 'error', error: 'Hãy chọn ngôn ngữ đích để dịch file SRT.' } : x
+            x.id === it.id ? { ...x, selected: true, status: 'error', error: 'Hãy chọn ngôn ngữ đích để dịch file SRT.' } : x
           )
         )
         return
@@ -241,6 +245,7 @@ export default function AudioText({
         setItems((prev) => prev.map((x) => x.id === it.id ? {
           ...x,
           status: translation.ok && translation.output ? 'done' : 'error',
+          selected: translation.ok && translation.output ? false : true,
           percent: translation.ok ? 100 : x.percent,
           outputs: translation.output ? [translation.output] : [],
           translationVerified: translation.verified ?? null,
@@ -275,6 +280,7 @@ export default function AudioText({
           setItems((prev) => prev.map((x) => x.id === it.id ? {
             ...x,
             status: res.ok ? 'done' : 'error',
+            selected: res.ok ? false : true,
             percent: res.ok ? 100 : x.percent,
             outputs,
             translationVerified,
@@ -285,7 +291,7 @@ export default function AudioText({
         void task.finally(() => translationTasks.current.delete(task))
         if (waitForTranslation) await task
         if (!waitForTranslation) {
-          setItems((prev) => prev.map((x) => x.id === it.id ? { ...x, status: res.ok ? 'done' : 'error', percent: res.ok ? 100 : x.percent, outputs, speakers: res.speakers, translationVerified: null, error: res.ok ? null : res.error } : x))
+          setItems((prev) => prev.map((x) => x.id === it.id ? { ...x, status: res.ok ? 'done' : 'error', selected: res.ok ? false : true, percent: res.ok ? 100 : x.percent, outputs, speakers: res.speakers, translationVerified: null, error: res.ok ? null : res.error } : x))
           return
         }
       }
@@ -297,6 +303,7 @@ export default function AudioText({
           ? {
               ...x,
               status: res.ok ? 'done' : 'error',
+              selected: res.ok ? false : true,
               percent: res.ok ? 100 : x.percent,
               outputs,
               speakers: res.speakers,
@@ -322,7 +329,7 @@ export default function AudioText({
       }
     }
     setDichErr(null)
-    const queue = items.filter((it) => it.status === 'queued' || it.status === 'error')
+    const queue = selectedQueueItems(items, new Set(['queued', 'error', 'done']))
     void runner.run(queue, (it) => runItem(it, false)).then(async () => {
       await Promise.allSettled([...translationTasks.current])
     })
@@ -333,9 +340,11 @@ export default function AudioText({
     if (runner.active) return
     setItems([])
   }
-  const pending = items.filter((it) => it.status === 'queued' || it.status === 'error').length
+  const pending = selectedQueueItems(items, new Set(['queued', 'error', 'done'])).length
+  const selectionState = queueSelectionState(items, new Set(['running', 'translating']))
+  const toggleAll = (): void => setItems((current) => toggleAllQueueItems(current, selectionState !== 'all', new Set(['running', 'translating'])))
   const hasPendingMedia = items.some(
-    (it) => (it.status === 'queued' || it.status === 'error') && it.kind === 'media'
+    (it) => it.selected && (it.status === 'queued' || it.status === 'error' || it.status === 'done') && it.kind === 'media'
   )
   const noFormat = !fmtSrt && !fmtTxt && !fmtVtt
 
@@ -574,12 +583,13 @@ export default function AudioText({
           <div className="queue-bar">
             <div className="queue-summary muted small">{items.length} tệp</div>
             <div className="queue-actions">
+              <label className="queue-select-all"><input type="checkbox" checked={selectionState === 'all'} ref={(element) => { if (element) element.indeterminate = selectionState === 'some' }} onChange={toggleAll} /> Chọn tất cả</label>
               <button className="btn" onClick={clearAll} disabled={runner.active}>
                 Xóa hết
               </button>
               <RunControls
                 runState={runner.runState}
-                startLabel={unlocked ? `Bắt đầu (${pending})` : 'Cần bản Pro'}
+                startLabel={unlocked ? `Xử lý đã chọn (${pending})` : 'Cần bản Pro'}
                 canStart={unlocked && pending > 0 && !!outputDir && (!hasPendingMedia || !noFormat)}
                     onStart={() => void startRun()}
                 onPause={runner.pause}
@@ -593,6 +603,7 @@ export default function AudioText({
               <div className={`qrow ${it.status}`} key={it.id}>
                 <div className="qmain">
                   <div className="qtitle" title={it.input}>
+                        <input className="queue-row-select" type="checkbox" checked={it.selected} disabled={it.status === 'running' || it.status === 'translating'} onChange={(event) => setItems((current) => current.map((item) => item.id === it.id ? { ...item, selected: event.target.checked } : item))} aria-label={`Chọn ${it.name}`} />
                         {it.kind === 'srt' ? '📄' : '🎧'} {it.name}
                   </div>
                   <div className="muted small">
