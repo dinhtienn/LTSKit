@@ -1,11 +1,14 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { copyFile, mkdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { DATA_DIR, resolveFfmpeg } from './deps'
 import { docSrt, srtTimeToSeconds } from './burn'
-import { debugRaw, errLabel, logError, logInfo } from './logger'
+import { debugRaw, errLabel, logError, logInfo, logWarn } from './logger'
 import { buildAtempoFilter, planAudioFitIfDurationKnown, trimAudioEdges } from './audioFit'
+import { generateDubbingRewriteWithGemini, rewriteForDubbing, targetWordsForSlot } from './dubbingRewrite'
+import { synthesizeWithOptionalRewrite } from './ttsCueRewrite'
+import { buildVoiceCuePlan, cueCps, writeVoiceoverSrt } from './voiceCuePlan'
 import { findMissingVieneuAssets, installVieneuAssets, VIENEU_READY, vieneuPaths } from './vieneuNativeAssets'
 import { buildVieneuCliArgs, resolveVieneuSelection, safeVieneuJobId, usefulVieneuError } from './vieneuNativeCli'
 import {
@@ -480,31 +483,67 @@ export async function vieneuSrtToMp3(
       }))
       .filter((cue) => cue.text.length > 0)
     if (!cues.length) return { id, ok: false, output: null, error: 'File phụ đề trống hoặc không hợp lệ.' }
+    const cpsOptions = req.cpsOptions ?? {
+      enabled: false, targetCps: 20, maxExpandSeconds: 0.5, minGapSeconds: 0.1,
+      maxBoundaryShiftSeconds: 0.5, minDurationSeconds: 0.8, balancePasses: 5
+    }
+    const voicePlan = buildVoiceCuePlan(cues.map((cue, cueIndex) => ({
+      cueIndex, start: cue.start, end: cue.end, sourceText: cue.text, voiceText: cue.text
+    })), cpsOptions)
+    const rewriteOptions = req.dubbingRewrite ?? { enabled: false, maxAttempts: 2, overrunRatio: 1 }
     await startJob(id, jobDir)
     started = true
     await rm(jobDir, { recursive: true, force: true })
     await mkdir(jobDir, { recursive: true })
     const clips: { path: string; start: number; dur: number }[] = []
-    for (let index = 0; index < cues.length; index++) {
+    for (let index = 0; index < voicePlan.length; index++) {
       if (isCancelled(id)) throw new Error('Đã hủy.')
-      const cue = cues[index]
+      const cue = voicePlan[index]
       send({
         status: 'synthesizing',
         percent: Math.round((index / cues.length) * 85),
         current: index + 1,
-        total: cues.length,
-        line: cue.text.slice(0, 80)
+        total: voicePlan.length,
+        line: cue.voiceText.slice(0, 80)
       })
-      const raw = join(jobDir, `raw_${index}.wav`)
-      const trimmed = join(jobDir, `trimmed_${index}.wav`)
-      const paced = join(jobDir, `paced_${index}.wav`)
       const fitted = join(jobDir, `fit_${index}.wav`)
-      await runSynth(id, cue.text, selection, raw)
-      const trimInput = await trimTtsAudio(ffmpeg, raw, trimmed, id)
-      await applyUserSpeed(ffmpeg, trimInput, paced, req.speed, id)
+      const cueAudio = await synthesizeWithOptionalRewrite({
+        originalText: cue.voiceText,
+        slotSeconds: Math.max(cue.end - cue.start, MIN_SLOT),
+        options: rewriteOptions,
+        isCancelled: () => isCancelled(id),
+        synthesize: async (text) => {
+          const suffix = text === cue.voiceText ? '' : `_${Date.now()}`
+          const source = join(jobDir, `raw_${index}${suffix}.wav`)
+          const trim = join(jobDir, `trimmed_${index}${suffix}.wav`)
+          const pacedPath = join(jobDir, `paced_${index}${suffix}.wav`)
+          await runSynth(id, text, selection, source)
+          const trimInput = await trimTtsAudio(ffmpeg, source, trim, id)
+          await applyUserSpeed(ffmpeg, trimInput, pacedPath, req.speed, id)
+          return { path: pacedPath, duration: await probeDurationSec(ffmpeg, pacedPath, id) }
+        },
+        rewrite: (system, user, schema) =>
+          generateDubbingRewriteWithGemini(`${id}-cue-${index}`, system, user, schema),
+        rewriteBeforeSynthesis: async () => {
+          if (!cpsOptions.enabled || cueCps(cue) <= cpsOptions.targetCps || !rewriteOptions.enabled) return null
+          logInfo(`Text→Giọng: cue ${index + 1}: CPS ${cueCps(cue).toFixed(2)} > target ${cpsOptions.targetCps}; Gemini rewrite before TTS`)
+          const result = await rewriteForDubbing(
+            { text: cue.voiceText, slotSeconds: Math.max(cue.end - cue.start, MIN_SLOT), targetWords: targetWordsForSlot(Math.max(cue.end - cue.start, MIN_SLOT)) },
+            (system, user, schema) => generateDubbingRewriteWithGemini(`${id}-cue-${index}-cps`, system, user, schema)
+          )
+          return result.ok ? result.text ?? null : null
+        }
+      })
+      cue.voiceText = cueAudio.voiceText
+      if (cueAudio.warning) {
+        logWarn(
+          `Text→Giọng: cue ${index + 1}: ${cueAudio.warning} ` +
+          `reason=${cueAudio.reason ?? 'unknown'} detail=${cueAudio.reasonDetail ?? 'none'} slot=${Math.max(cue.end - cue.start, MIN_SLOT).toFixed(3)}s`
+        )
+      }
       const duration = await fitWavToSlot(
         ffmpeg,
-        paced,
+        cueAudio.path,
         fitted,
         Math.max(cue.end - cue.start, MIN_SLOT),
         id
@@ -513,18 +552,26 @@ export async function vieneuSrtToMp3(
     }
     send({ status: 'mixing', percent: 90, current: cues.length, total: cues.length, line: 'Đang ghép MP3…' })
     let totalSec = 0.5
-    for (const cue of cues) totalSec = Math.max(totalSec, cue.end)
+    for (const cue of voicePlan) totalSec = Math.max(totalSec, cue.end)
     for (const clip of clips) totalSec = Math.max(totalSec, clip.start + clip.dur)
     await mkdir(req.outputDir, { recursive: true })
     const output = join(req.outputDir, `${basename(req.srt).replace(/\.srt$/i, '')}.mp3`)
     const temporaryOutput = join(jobDir, 'output.mp3')
     await mixClipsToMp3(ffmpeg, clips, totalSec, temporaryOutput, id)
     await replaceOutputFile(temporaryOutput, output)
+    const voiceoverSrt = cpsOptions.enabled || rewriteOptions.enabled
+      ? join(req.outputDir, `${basename(req.srt).replace(/\.srt$/i, '')}.voiceover.srt`)
+      : null
+    if (voiceoverSrt) {
+      const voiceoverTemp = `${voiceoverSrt}.tmp`
+      await writeFile(voiceoverTemp, writeVoiceoverSrt(voicePlan), 'utf8')
+      await rename(voiceoverTemp, voiceoverSrt)
+    }
     await rm(jobDir, { recursive: true, force: true })
     clearJob(id)
     send({ status: 'finished', percent: 100, current: cues.length, total: cues.length, line: output })
     logInfo(`Text→Giọng: xong ${basename(output)}`)
-    return { id, ok: true, output, error: null }
+    return { id, ok: true, output, subtitleOutput: voiceoverSrt, error: null }
   } catch (error) {
     const cancelled = started && isCancelled(id)
     if (cancelled) await rm(jobDir, { recursive: true, force: true })

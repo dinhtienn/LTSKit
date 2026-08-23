@@ -302,6 +302,22 @@ export interface BurnResult {
 }
 
 // ---- Text -> Giong (VieNeu-TTS v3 native CPU) ----
+export interface CpsOptions {
+  enabled: boolean
+  targetCps: number
+  maxExpandSeconds: number
+  minGapSeconds: number
+  maxBoundaryShiftSeconds: number
+  minDurationSeconds: number
+  balancePasses: number
+}
+
+export interface DubbingRewriteOptions {
+  enabled: boolean
+  maxAttempts: number
+  overrunRatio: number
+}
+
 export type VieneuVoiceKind = 'preset' | 'clone'
 
 export interface VieneuEngineStatus {
@@ -329,6 +345,8 @@ export interface VieneuSrtRequest {
   outputDir: string
   voiceId: string
   speed: number
+  cpsOptions: CpsOptions
+  dubbingRewrite: DubbingRewriteOptions
 }
 
 export interface VieneuProgress {
@@ -344,6 +362,7 @@ export interface VieneuResult {
   id: string
   ok: boolean
   output: string | null
+  subtitleOutput?: string | null
   error: string | null
 }
 

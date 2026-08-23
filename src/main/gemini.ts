@@ -26,6 +26,27 @@ export interface GenKQ {
 
 export type GeminiGenerate = (sys: string, user: string, schema: object) => Promise<GenKQ>
 
+export async function generateDubbingRewrite(
+  jobId: string,
+  system: string,
+  user: string,
+  schema: object
+): Promise<GenKQ> {
+  let lease: GeminiKeyLease | null = null
+  try {
+    while (true) {
+      if (!lease) lease = await keyPool.acquire(jobId)
+      const result = await goiCoLui(lease.key, system, user, schema, 45_000)
+      if (result.ok || !canFailover(result)) return result
+      await keyPool.disable(jobId, lease.id)
+      await lease.release()
+      lease = null
+    }
+  } finally {
+    if (lease) await keyPool.release(lease)
+  }
+}
+
 export function isTimeoutError(error: unknown): boolean {
   return error instanceof DOMException && error.name === 'TimeoutError'
 }

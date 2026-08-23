@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomUUID } from 'node:crypto'
-import { copyFile, mkdir, readFile, rename, rm, stat } from 'node:fs/promises'
+import { copyFile, mkdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, join } from 'node:path'
 import { app } from 'electron'
 import { DATA_DIR, resolveFfmpeg } from './deps'
@@ -9,6 +9,10 @@ import { debugRaw, errLabel, logError, logInfo, logWarn } from './logger'
 import { capcutPaths, ensureCapcutProfile, rotateCapcutProfile } from './capcutDevice'
 import { buildCapcutAudioPlan } from './capcutAudioPlan'
 import { trimAudioEdges } from './audioFit'
+import { generateDubbingRewriteWithGemini } from './dubbingRewrite'
+import { rewriteForDubbing, targetWordsForSlot } from './dubbingRewrite'
+import { synthesizeWithOptionalRewrite } from './ttsCueRewrite'
+import { buildVoiceCuePlan, cueCps, writeVoiceoverSrt } from './voiceCuePlan'
 import {
   capcutCheckpointDir,
   capcutCueFingerprint,
@@ -544,6 +548,18 @@ export async function capcutSrtToMp3(
       }))
       .filter((cue) => cue.text.length > 0)
     if (!cues.length) return { id, ok: false, output: null, error: 'File phụ đề trống hoặc không hợp lệ.' }
+    const cpsOptions = req.cpsOptions ?? {
+      enabled: false, targetCps: 20, maxExpandSeconds: 0.5, minGapSeconds: 0.1,
+      maxBoundaryShiftSeconds: 0.5, minDurationSeconds: 0.8, balancePasses: 5
+    }
+    const voicePlan = buildVoiceCuePlan(cues.map((cue) => ({
+      cueIndex: cue.cueIndex, start: cue.start, end: cue.end, sourceText: cue.text, voiceText: cue.text
+    })), cpsOptions)
+    const planByIndex = new Map(voicePlan.map((cue) => [cue.cueIndex, cue]))
+    const plannedCues = cues.map((cue) => {
+      const planned = planByIndex.get(cue.cueIndex)!
+      return { ...cue, start: planned.start, end: planned.end, text: planned.voiceText }
+    })
     totalCues = cues.length
     const profileCount = validateProfileCount(req.profileCount)
     metrics = createCapcutJobMetrics(profileCount)
@@ -553,14 +569,19 @@ export async function capcutSrtToMp3(
     started = true
     await mkdir(jobDir, { recursive: true })
     const manifestPath = join(jobDir, 'manifest.json')
-    const fingerprints = new Map(cues.map((cue) => [cue.cueIndex, capcutCueFingerprint(cue, req.voiceId, req.speed)]))
+    const dubbingRewrite = req.dubbingRewrite ?? { enabled: false, maxAttempts: 2, overrunRatio: 1 }
+    const fingerprints = new Map(plannedCues.map((cue) => [cue.cueIndex, capcutCueFingerprint(cue, req.voiceId, req.speed, dubbingRewrite)]))
     const entriesByCue = await readReusableCheckpoint(manifestPath, fingerprints)
     jobMetrics.completed = entriesByCue.size
-    const missing = cues.filter((cue) => !entriesByCue.has(cue.cueIndex))
+    const missing = plannedCues.filter((cue) => !entriesByCue.has(cue.cueIndex))
     let stopped = false
     manifestWriter = new CapcutManifestWriter(manifestPath)
     const writer = manifestWriter
-    for (const entry of entriesByCue.values()) writer.record(entry)
+    for (const entry of entriesByCue.values()) {
+      const planned = planByIndex.get(entry.cueIndex)
+      if (planned && entry.voiceText) planned.voiceText = entry.voiceText
+      writer.record(entry)
+    }
     await runCapcutPool(
       missing,
       profileCount,
@@ -571,34 +592,62 @@ export async function capcutSrtToMp3(
           if (isCancelled(id) || stopped) throw new Error('Đã hủy.')
           try {
             const fitted = join(jobDir, `fit_${cue.cueIndex}.wav`)
-            const sourceMp3 = await synthCapcutMp3(
-              id,
-              cue.text,
-              req.voiceId,
-              devicePath,
-              fitted,
-              workerPool,
-              profileIndex
-            )
-            let duration: number
-            try {
-              duration = await convertCapcutMp3ToWav(
-                id,
-                ffmpeg,
-                sourceMp3,
-                fitted,
-                req.speed,
-                Math.max(cue.end - cue.start, MIN_SLOT)
+            const cueAudio = await synthesizeWithOptionalRewrite({
+              originalText: cue.text,
+              slotSeconds: Math.max(cue.end - cue.start, MIN_SLOT),
+              options: dubbingRewrite,
+              isCancelled: () => isCancelled(id) || stopped,
+              synthesize: async (text) => {
+                const suffix = text === cue.text ? '' : `_${Date.now()}`
+                const audioPath = join(jobDir, `paced_${cue.cueIndex}${suffix}.wav`)
+                const sourceMp3 = await synthCapcutMp3(
+                  id, text, req.voiceId, devicePath, audioPath, workerPool, profileIndex
+                )
+                try {
+                  const duration = await convertCapcutMp3ToWav(
+                    id, ffmpeg, sourceMp3, audioPath, req.speed, null
+                  )
+                  return { path: audioPath, duration }
+                } finally {
+                  await rm(sourceMp3, { force: true })
+                }
+              },
+              rewrite: (system, user, schema) =>
+                generateDubbingRewriteWithGemini(`${id}-cue-${cue.cueIndex}`, system, user, schema),
+              rewriteBeforeSynthesis: async () => {
+                const planned = planByIndex.get(cue.cueIndex)
+                if (!cpsOptions.enabled || !planned || cueCps(planned) <= cpsOptions.targetCps || !dubbingRewrite.enabled) return null
+                logInfo(`CapCut: cue ${cue.cueIndex + 1}: CPS ${cueCps(planned).toFixed(2)} > target ${cpsOptions.targetCps}; Gemini rewrite before TTS`)
+                const result = await rewriteForDubbing(
+                  { text: planned.voiceText, slotSeconds: Math.max(planned.end - planned.start, MIN_SLOT), targetWords: targetWordsForSlot(Math.max(planned.end - planned.start, MIN_SLOT)) },
+                  (system, user, schema) => generateDubbingRewriteWithGemini(`${id}-cue-${cue.cueIndex}-cps`, system, user, schema)
+                )
+                return result.ok ? result.text ?? null : null
+              }
+            })
+            const planned = planByIndex.get(cue.cueIndex)
+            if (planned) planned.voiceText = cueAudio.voiceText
+            if (cueAudio.warning) {
+              logWarn(
+                `CapCut: cue ${cue.cueIndex + 1}: ${cueAudio.warning} ` +
+                `reason=${cueAudio.reason ?? 'unknown'} detail=${cueAudio.reasonDetail ?? 'none'} slot=${Math.max(cue.end - cue.start, MIN_SLOT).toFixed(3)}s`
               )
-            } finally {
-              await rm(sourceMp3, { force: true })
             }
+            const duration = await convertCapcutMp3ToWav(
+              id,
+              ffmpeg,
+              cueAudio.path,
+              fitted,
+              1,
+              Math.max(cue.end - cue.start, MIN_SLOT)
+            )
             writer.record({
               cueIndex: cue.cueIndex,
               fingerprint: fingerprints.get(cue.cueIndex)!,
               path: fitted,
               start: cue.start,
-              dur: duration
+              dur: duration,
+              voiceText: planByIndex.get(cue.cueIndex)?.voiceText ?? cue.text
             })
             jobMetrics.completed += 1
             send({
@@ -649,7 +698,7 @@ export async function capcutSrtToMp3(
       total: cues.length,
       line: 'Đang ghép MP3…'
     })
-    const totalSec = Math.max(0.5, ...cues.map((cue) => cue.end), ...clips.map((clip) => clip.start + clip.dur))
+    const totalSec = Math.max(0.5, ...plannedCues.map((cue) => cue.end), ...clips.map((clip) => clip.start + clip.dur))
     await mkdir(req.outputDir, { recursive: true })
     const output = join(req.outputDir, `${basename(req.srt).replace(/\.srt$/i, '')}.mp3`)
     const mixPlan = buildCapcutMixPlan(clips, totalSec, jobDir)
@@ -672,12 +721,20 @@ export async function capcutSrtToMp3(
       throw new Error('Xuất MP3 CapCut thất bại.')
     }
     await replaceOutputFile(mixPlan.finalOutput, output)
+    const voiceoverSrt = cpsOptions.enabled || dubbingRewrite.enabled
+      ? join(req.outputDir, `${basename(req.srt).replace(/\.srt$/i, '')}.voiceover.srt`)
+      : null
+    if (voiceoverSrt) {
+      const voiceoverTemp = `${voiceoverSrt}.tmp`
+      await writeFile(voiceoverTemp, writeVoiceoverSrt(voicePlan), 'utf8')
+      await rename(voiceoverTemp, voiceoverSrt)
+    }
     await rm(jobDir, { recursive: true, force: true })
     clearJob(id)
     terminalStatus = 'finished'
     send({ status: 'finished', percent: 100, current: cues.length, total: cues.length, line: output })
     logInfo(`CapCut Text→Giọng: xong ${basename(output)}`)
-    return { id, ok: true, output, error: null }
+    return { id, ok: true, output, subtitleOutput: voiceoverSrt, error: null }
   } catch (error) {
     await manifestWriter?.flush().catch(() => undefined)
     const cancelled = started && isCancelled(id)
