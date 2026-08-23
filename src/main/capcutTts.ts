@@ -8,6 +8,7 @@ import { docSrt, srtTimeToSeconds } from './burn'
 import { debugRaw, errLabel, logError, logInfo, logWarn } from './logger'
 import { capcutPaths, ensureCapcutProfile, rotateCapcutProfile } from './capcutDevice'
 import { buildCapcutAudioPlan } from './capcutAudioPlan'
+import { trimAudioEdges } from './audioFit'
 import {
   capcutCheckpointDir,
   capcutCueFingerprint,
@@ -424,18 +425,32 @@ async function convertCapcutMp3ToWav(
   speed: number,
   slot: number | null
 ): Promise<number> {
-  const sourceDuration = await probeDurationSec(ffmpeg, sourceMp3, id)
-  const plan = buildCapcutAudioPlan(sourceMp3, outputWav, sourceDuration, speed, slot, MIN_SLOT)
-  const result = await runCapture(ffmpeg, plan.args, id)
-  if (result.code !== 0 || !(await isNonEmptyFile(outputWav, 44))) {
-    throw new Error('Không chuyển được audio CapCut sang WAV.')
+  const trimmedWav = `${outputWav}.trim.wav`
+  const trimInput = await trimAudioEdges(
+    sourceMp3,
+    trimmedWav,
+    async (args) => {
+      const result = await runCapture(ffmpeg, args, id)
+      return result.code === 0 && (await isNonEmptyFile(trimmedWav, 44))
+    },
+    () => isCancelled(id)
+  )
+  try {
+    const sourceDuration = await probeDurationSec(ffmpeg, trimInput, id)
+    const plan = buildCapcutAudioPlan(trimInput, outputWav, sourceDuration, speed, slot, MIN_SLOT)
+    const result = await runCapture(ffmpeg, plan.args, id)
+    if (result.code !== 0 || !(await isNonEmptyFile(outputWav, 44))) {
+      throw new Error('Không chuyển được audio CapCut sang WAV.')
+    }
+    if (plan.outputLimit != null) return plan.outputLimit
+    // No slot limit means the atempo chain multiplies out to exactly plan.tempo
+    // and no -t was applied, so the output length is exact without a probe.
+    const fittedDuration = sourceDuration / plan.tempo
+    if (!(fittedDuration > 0)) throw new Error('Không đo được thời lượng audio CapCut.')
+    return fittedDuration
+  } finally {
+    await rm(trimmedWav, { force: true })
   }
-  if (plan.outputLimit != null) return plan.outputLimit
-  // No slot limit means the atempo chain multiplies out to exactly plan.tempo
-  // and no -t was applied, so the output length is exact without a probe.
-  const fittedDuration = sourceDuration / plan.tempo
-  if (!(fittedDuration > 0)) throw new Error('Không đo được thời lượng audio CapCut.')
-  return fittedDuration
 }
 
 export async function previewCapcutVoice(

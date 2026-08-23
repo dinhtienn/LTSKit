@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path'
 export type CapcutRetryKind = 'shark' | 'busy' | 'network'
 export type CapcutTerminalStatus = 'finished' | 'failed' | 'cancelled'
 
-const AUDIO_PROCESSING_VERSION = 1
+const AUDIO_PROCESSING_VERSION = 2
 
 export interface CapcutCue {
   cueIndex: number

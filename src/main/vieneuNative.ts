@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import { DATA_DIR, resolveFfmpeg } from './deps'
 import { docSrt, srtTimeToSeconds } from './burn'
 import { debugRaw, errLabel, logError, logInfo } from './logger'
+import { buildAtempoFilter, planAudioFitIfDurationKnown, trimAudioEdges } from './audioFit'
 import { findMissingVieneuAssets, installVieneuAssets, VIENEU_READY, vieneuPaths } from './vieneuNativeAssets'
 import { buildVieneuCliArgs, resolveVieneuSelection, safeVieneuJobId, usefulVieneuError } from './vieneuNativeCli'
 import {
@@ -230,19 +231,21 @@ async function probeDurationSec(ffmpeg: string, audio: string, id?: string): Pro
     Number(match[4].padEnd(3, '0').slice(0, 3)) / 1000
 }
 
-function buildAtempoFilter(rate: number): string {
-  let remaining = rate
-  const filters: string[] = []
-  while (remaining > 2 + 1e-6) {
-    filters.push('atempo=2.0')
-    remaining /= 2
-  }
-  while (remaining < 0.5 - 1e-6) {
-    filters.push('atempo=0.5')
-    remaining /= 0.5
-  }
-  filters.push(`atempo=${Math.max(0.5, Math.min(2, remaining)).toFixed(4)}`)
-  return filters.join(',')
+async function trimTtsAudio(
+  ffmpeg: string,
+  input: string,
+  output: string,
+  id: string
+): Promise<string> {
+  return trimAudioEdges(
+    input,
+    output,
+    async (args) => {
+      const result = await runCapture(ffmpeg, args, id)
+      return result.code === 0 && (await isNonEmptyFile(output, 44))
+    },
+    () => isCancelled(id)
+  )
 }
 
 async function applyUserSpeed(
@@ -274,14 +277,20 @@ async function fitWavToSlot(
   id: string
 ): Promise<number> {
   const duration = await probeDurationSec(ffmpeg, input, id)
-  if (duration <= slot + 0.02) {
+  const plan = planAudioFitIfDurationKnown(duration, 1, slot, MIN_SLOT)
+  if (plan?.outputLimit == null) {
     const result = await runCapture(ffmpeg, ['-y', '-i', input, '-c', 'copy', output], id)
     if (result.code !== 0) throw new Error('Không chép được clip TTS.')
     return duration > 0 ? duration : Math.min(slot, 0.1)
   }
   const result = await runCapture(
     ffmpeg,
-    ['-y', '-i', input, '-filter:a', buildAtempoFilter(duration / slot), '-t', String(slot), output],
+    [
+      '-y', '-i', input,
+      '-filter:a', buildAtempoFilter(plan.tempo),
+      '-t', String(plan.outputLimit),
+      output
+    ],
     id
   )
   if (result.code !== 0) throw new Error('Không chỉnh audio cho vừa phụ đề.')
@@ -388,9 +397,11 @@ async function previewSelection(
     await rm(dir, { recursive: true, force: true })
     await mkdir(dir, { recursive: true })
     const raw = join(dir, 'raw.wav')
+    const trimmed = join(dir, 'trimmed.wav')
     const output = join(dir, fileName)
     await runSynth(id, text, selection, raw)
-    await applyUserSpeed(ffmpeg, raw, output, speed, id)
+    const trimInput = await trimTtsAudio(ffmpeg, raw, trimmed, id)
+    await applyUserSpeed(ffmpeg, trimInput, output, speed, id)
     clearJob(id)
     return { ok: true, path: output, error: null }
   } catch (error) {
@@ -485,10 +496,12 @@ export async function vieneuSrtToMp3(
         line: cue.text.slice(0, 80)
       })
       const raw = join(jobDir, `raw_${index}.wav`)
+      const trimmed = join(jobDir, `trimmed_${index}.wav`)
       const paced = join(jobDir, `paced_${index}.wav`)
       const fitted = join(jobDir, `fit_${index}.wav`)
       await runSynth(id, cue.text, selection, raw)
-      await applyUserSpeed(ffmpeg, raw, paced, req.speed, id)
+      const trimInput = await trimTtsAudio(ffmpeg, raw, trimmed, id)
+      await applyUserSpeed(ffmpeg, trimInput, paced, req.speed, id)
       const duration = await fitWavToSlot(
         ffmpeg,
         paced,
