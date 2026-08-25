@@ -990,14 +990,13 @@ select {
   outline: 2px solid #fff;
   outline-offset: 2px;
 }
-/* Vung se bi lam mo khi ghep video: lam mo THAT video ben duoi (backdrop-filter)
-   -> user xem truoc chinh xac vung + hieu ung. Ranh gioi = VIEN CAM (crisp).
-   2 dai xanh gay roi truoc day la tay-nam-keo (da cho trong suot), khong phai
-   mep cua vung mo. */
+/* Vung se bi lam mo khi ghep video: lam mo THAT video ben duoi -> user xem truoc
+   chinh xac vung + hieu ung. Ranh gioi = VIEN CAM (crisp).
+   `backdrop-filter` KHONG dat o day: do blur phai quy doi tu `gblur=sigma` cua
+   ban xuat sang CSS pixel theo kich thuoc preview, nen RegionBox tinh inline
+   qua `previewBlurRadius` trong `src/shared/videoBlur.ts`. */
 .rbox-lammo {
   border-color: var(--warn);
-  backdrop-filter: blur(6px);
-  -webkit-backdrop-filter: blur(6px);
 }
 .rbox-lammo .rbox-nhan {
   background: var(--warn);

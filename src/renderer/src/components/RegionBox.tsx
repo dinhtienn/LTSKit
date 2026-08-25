@@ -1,6 +1,7 @@
 import type { CSSProperties, JSX, KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useCallback, useEffect, useRef } from 'react'
 import type { VideoRect } from '../../../shared/types'
+import { previewBlurRadius } from '../../../shared/videoBlur'
 import {
   arrowDelta,
   moveRect,
@@ -166,7 +167,13 @@ export default function RegionBox({
           left: xPct(region.x0),
           top: yPct(region.y0),
           width: xPct(region.x1 - region.x0),
-          height: yPct(region.y1 - region.y0)
+          height: yPct(region.y1 - region.y0),
+          ...(previewBlur
+            ? {
+                backdropFilter: `blur(${previewBlurRadius(videoW, videoH, boxW, boxH)}px)`,
+                WebkitBackdropFilter: `blur(${previewBlurRadius(videoW, videoH, boxW, boxH)}px)`
+              }
+            : {})
         }}
         role="group"
         tabIndex={0}
