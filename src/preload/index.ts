@@ -290,6 +290,10 @@ const api = {
   getLogs: (): Promise<LogEntry[]> => ipcRenderer.invoke('logs:get'),
   clearLogs: (): Promise<void> => ipcRenderer.invoke('logs:clear'),
   openLogFile: (): Promise<void> => ipcRenderer.invoke('logs:openFile'),
+
+  // ---- Cache ket qua job ----
+  cacheUsage: (): Promise<number> => ipcRenderer.invoke('cache:usage'),
+  clearCache: (): Promise<void> => ipcRenderer.invoke('cache:clear'),
   onLog: (cb: (e: LogEntry) => void): (() => void) => {
     const listener = (_e: unknown, entry: LogEntry): void => cb(entry)
     ipcRenderer.on('logs:entry', listener)

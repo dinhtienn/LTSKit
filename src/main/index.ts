@@ -47,6 +47,7 @@ import { checkKey, hasKey, saveKey, translateSrt } from './gemini'
 import { addKey, getKey, listKeys, removeKey } from './geminiStore'
 import { discoverModels, geminiReadiness, loadModelPool, saveModelPool } from './geminiModels'
 import { cancelOcr, installOcrEngine, ocrEngineStatus, ocrVideo } from './ocr'
+import { cacheUsageBytes, clearJobCache, jobCacheRoot } from './jobCache'
 import { burnSubtitle, cancelBurn, srtGiay, srtNoiDung } from './burn'
 import { probeLogoDimensions, probeMedia } from './videoComposer'
 import {
@@ -581,6 +582,13 @@ function registerIpc(): void {
   ipcMain.handle('logs:clear', async () => clearLogs())
   ipcMain.handle('logs:openFile', async () => {
     await shell.openPath(logFilePath())
+  })
+
+  // Cache ket qua job (Audio->Text)
+  ipcMain.handle('cache:usage', async () => cacheUsageBytes(jobCacheRoot()))
+  ipcMain.handle('cache:clear', async () => {
+    await clearJobCache(jobCacheRoot())
+    logInfo('Đã xóa kết quả đã lưu.')
   })
 
   // Tai xuong

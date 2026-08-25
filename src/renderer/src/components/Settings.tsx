@@ -11,6 +11,12 @@ const AUTHOR_URL = 'https://github.com/dinhtienn'
 const FEEDBACK_URL = 'https://github.com/dinhtienn/LTSKit/issues'
 const GEMINI_KEY_MASK = '********'
 
+function readableSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 type SettingsTab = 'account' | 'connection' | 'aiTools' | 'about'
 
 const SETTINGS_TABS: Array<{ key: SettingsTab; label: string; icon: JSX.Element }> = [
@@ -45,6 +51,8 @@ export default function Settings(): JSX.Element {
   const [ytVer, setYtVer] = useState<string | null>(null)
   const [toolBusy, setToolBusy] = useState(false)
   const [toolMsg, setToolMsg] = useState<string | null>(null)
+  const [cacheBytes, setCacheBytes] = useState<number | null>(null)
+  const [cacheBusy, setCacheBusy] = useState(false)
 
   const refreshProfiles = (): void => { void window.api.cookieProfiles().then(setProfiles) }
 
@@ -53,7 +61,16 @@ export default function Settings(): JSX.Element {
     void window.api.geminiModels().then(setPool)
     refreshProfiles()
     void window.api.ytdlpVersion().then(setYtVer)
+    void window.api.cacheUsage().then(setCacheBytes)
   }, [])
+
+  const clearCache = async (): Promise<void> => {
+    setCacheBusy(true)
+    await window.api.clearCache()
+    setCacheBytes(await window.api.cacheUsage())
+    setCacheBusy(false)
+  }
+
 
   const isDouyin = (url: string): boolean => {
     try { return new URL(url).hostname.toLowerCase().replace(/^www\./, '') === 'douyin.com' } catch { return false }
@@ -273,6 +290,18 @@ export default function Settings(): JSX.Element {
         </div>
         </div>
         <div className="card settings-card"><div className="cookie-title">yt-dlp</div><div className="muted small">Phiên bản: <b>{ytVer || '…'}</b> · tự cập nhật hằng ngày</div><div className="cookie-actions"><button className="btn" onClick={updateTool} disabled={toolBusy}>{toolBusy ? 'Đang cập nhật…' : '⟳ Cập nhật công cụ'}</button></div>{toolMsg && <div className="muted small">{toolMsg}</div>}</div>
+        <div className="card settings-card">
+          <div className="cookie-title">Kết quả đã lưu</div>
+          <div className="muted small">
+            Phụ đề tạo từ Audio→Text được giữ lại để chạy lại cùng một video không phải phiên âm lần nữa.
+            Đang dùng <b>{cacheBytes == null ? '…' : readableSize(cacheBytes)}</b>.
+          </div>
+          <div className="cookie-actions">
+            <button className="btn" onClick={clearCache} disabled={cacheBusy || cacheBytes === 0}>
+              {cacheBusy ? 'Đang xóa…' : '🗑 Xóa kết quả đã lưu'}
+            </button>
+          </div>
+        </div>
       </>}
 
       {tab === 'about' && (

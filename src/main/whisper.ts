@@ -3,6 +3,8 @@ import { access, chmod, mkdir, readdir, rm } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { basename, join } from 'node:path'
 import { ASSET_BASE, binDir, DATA_DIR, downloadFile, ensureDataDirs, extractZip } from './deps'
+import { jobCacheRoot, readCachedOutputs, writeCachedOutputs } from './jobCache'
+import { whisperJobKey } from './jobIdentity'
 import { debugRaw, errLabel, logError, logInfo } from './logger'
 import {
   WhisperCudaStatus,
@@ -130,6 +132,33 @@ export async function transcribeAudio(
   // Chi chay GPU khi user chon 'cuda' VA da co goi tang toc; nguoc lai CPU.
   const useCuda = req.device === 'cuda' && (await whisperCudaStatus()).has
 
+  // Cache tra TRUOC khi spawn: phien am mot file dai ton hang chuc phut, chay
+  // lai nguyen ven khi input va cau hinh khong doi la vo ich. Moi loi lien quan
+  // cache deu bo qua de job van chay binh thuong.
+  const cacheKey = await whisperJobKey({ ...req, device: useCuda ? 'cuda' : 'cpu' }).catch(
+    () => null
+  )
+  if (cacheKey) {
+    const cached = await readCachedOutputs(
+      jobCacheRoot(),
+      'whisper',
+      cacheKey,
+      req.outputDir
+    ).catch(() => null)
+    if (cached) {
+      logInfo(`Audio→Text: dùng lại kết quả đã lưu cho ${basename(req.input)}`)
+      onProgress({ id, status: 'finished', percent: 100, language: null, line: null })
+      return {
+        id,
+        ok: true,
+        outputs: cached.outputs,
+        segments: Number(cached.meta.segments) || 0,
+        speakers: Number(cached.meta.speakers) || 0,
+        error: null
+      }
+    }
+  }
+
   const args = [
     '--input', req.input,
     '--output-dir', req.outputDir,
@@ -248,6 +277,15 @@ export async function transcribeAudio(
         logInfo(
           `Audio→Text: hoàn tất — ${segments} đoạn, ${outputs.length} tệp${speakers ? `, ${speakers} người nói` : ''}`
         )
+        if (cacheKey && outputs.length) {
+          void writeCachedOutputs(jobCacheRoot(), 'whisper', cacheKey, outputs, {
+            segments,
+            speakers
+          }).catch((err) => {
+            // Khong luu duoc cache thi lan sau chay lai, khong anh huong ket qua.
+            debugRaw('whisper cache write', err)
+          })
+        }
         onProgress({ id, status: 'finished', percent: 100, language, line: null })
         resolve({ id, ok: true, outputs, segments, speakers, error: null })
       } else {
