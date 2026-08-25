@@ -275,6 +275,14 @@ function validateSubtitleStyle(req: BurnReq): string | null {
   return null
 }
 
+/**
+ * SRT dung de lay moc giam am nen. Uu tien file rieng cua ducking (thuong la
+ * voiceover.srt) roi moi den phu de dang duoc ghep vao video.
+ */
+export function duckingTimingSource(req: BurnReq): string | null {
+  return req.ducking?.timingSrt || req.srt || null
+}
+
 export function validateBurnRequest(req: BurnReq, meta: MediaProbe): string | null {
   if (![req.videoVolume, req.voiceVolume].every((value) => Number.isFinite(value) && value >= 0 && value <= 100)) return 'Âm lượng phải từ 0 đến 100.'
   if (req.srt && req.mode !== 'burn' && req.mode !== 'soft') return 'Hãy chọn cách gắn phụ đề.'
@@ -293,6 +301,12 @@ export function validateBurnRequest(req: BurnReq, meta: MediaProbe): string | nu
   if (req.logo && (!req.logo.path || !validRect(req.logo.rect, meta))) {
     return 'Vùng logo không hợp lệ hoặc nằm ngoài video.'
   }
+  if (req.ducking?.enabled) {
+    if (!req.voice) return 'Ducking cần có voice-over.'
+    if (!duckingTimingSource(req)) return 'Ducking cần một file phụ đề để lấy mốc thời gian.'
+    if (!Number.isFinite(req.ducking.duckPercent) || req.ducking.duckPercent < 0 || req.ducking.duckPercent > 100) return 'Mức giảm âm ducking phải từ 0 đến 100%.'
+    if (![req.ducking.attackMs, req.ducking.releaseMs].every((value) => Number.isFinite(value) && value >= 0 && value <= 2000)) return 'Attack/release ducking phải từ 0 đến 2000ms.'
+  }
   const hasOperation = !!req.srt || !!req.lamMo || !!req.voice || !!req.logo || (req.textOverlays?.length ?? 0) > 0 || req.videoVolume !== 100
   if (!hasOperation) return 'Hãy chọn ít nhất một thay đổi để xuất video.'
   return null
@@ -302,7 +316,7 @@ const evenCoordinate = (value: number): number => Math.max(0, Math.floor(value /
 const evenDimension = (value: number): number => Math.max(2, Math.floor(value / 2) * 2)
 const volume = (percent: number): string => Number((percent / 100).toFixed(2)).toString()
 
-export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: string): ComposerPlan {
+export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: string, duckingExpression?: string): ComposerPlan {
   const inputs: string[] = []
   const addInput = (path: string): number => {
     inputs.push(path)
@@ -363,8 +377,13 @@ export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: stri
   let audioMap = '0:a?'
   if (voiceInput !== null) {
     if (meta.hasAudio) {
+      // `eval=frame` la bat buoc: mac dinh filter volume chi tinh bieu thuc mot
+      // lan nen gain se dung yen thay vi bam theo tung cue voice-over.
+      const sourceGain = duckingExpression
+        ? `'${duckingExpression}':eval=frame`
+        : volume(req.videoVolume)
       filters.push(
-        `[0:a]volume=${volume(req.videoVolume)}[a0]`,
+        `[0:a]volume=${sourceGain}[a0]`,
         `[${voiceInput}:a]volume=${volume(req.voiceVolume)}[a1]`,
         '[a0][a1]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]'
       )

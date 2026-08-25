@@ -43,6 +43,10 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
   const [voice, setVoice] = useState('')
   const [videoVolume, setVideoVolume] = useState(100)
   const [voiceVolume, setVoiceVolume] = useState(100)
+  const [duckingEnabled, setDuckingEnabled] = usePersistedState('ltskit.editor.ducking', false)
+  const [duckPercent, setDuckPercent] = usePersistedState('ltskit.editor.duckPercent', 35)
+  const [duckAttackMs, setDuckAttackMs] = usePersistedState('ltskit.editor.duckAttackMs', 150)
+  const [duckReleaseMs, setDuckReleaseMs] = usePersistedState('ltskit.editor.duckReleaseMs', 400)
   const [logoEnabled, setLogoEnabled] = useState(false)
   const [logo, setLogo] = useState('')
   const [logoAspect, setLogoAspect] = useState(1)
@@ -163,6 +167,16 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
     } else if (decision.action === 'pause') voiceEl.pause()
   }
 
+  // Chi nap lai the audio khi doi file voice. Gop them voiceVolume vao day se
+  // khien moi nac keo thanh am luong tua voice ve dau.
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio || !voice) return
+    audio.pause()
+    audio.currentTime = 0
+    audio.load()
+  }, [voice])
+
   useEffect(() => {
     if (!voiceEnabled || !voice) {
       voiceSyncRef.current += 1
@@ -227,6 +241,7 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
     const selected = await window.api.chooseAudio()
     if (request !== voiceRequestRef.current || !selected) return
     setVoice(selected)
+    setVoiceEnabled(true)
     setGhepLoi(null)
   }
 
@@ -305,6 +320,13 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
         voice: voiceEnabled ? voice : null,
         videoVolume,
         voiceVolume,
+        ducking: {
+          enabled: duckingEnabled && voiceEnabled && !!voice && !!srtNgoai,
+          timingSrt: srtNgoai || null,
+          duckPercent: duckPercent,
+          attackMs: duckAttackMs,
+          releaseMs: duckReleaseMs
+        },
         logo: logoEnabled && logo ? { path: logo, rect: logoRect } : null
       })
       if (!result.ok) {
@@ -421,6 +443,67 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                 <span className="volume-value">{videoVolume}%</span>
               </label>
               {media?.hasAudio === false && <div className="muted small">Video không có âm thanh gốc.</div>}
+              <label className="gk-check composer-head" style={{ marginTop: 10 }}>
+                <input
+                  type="checkbox"
+                  checked={duckingEnabled}
+                  disabled={!media?.hasAudio || !voiceEnabled || !voice || !srtNgoai}
+                  onChange={(event) => setDuckingEnabled(event.target.checked)}
+                />
+                <b>Tự giảm âm thanh nền khi có voice-over</b>
+              </label>
+              {!srtNgoai ? (
+                <>
+                  <div className="muted small">Cần một file phụ đề (.srt) để biết lúc nào giọng đọc đang nói.</div>
+                  <button className="btn small-btn" onClick={chooseSrt} disabled={!media?.hasAudio}>
+                    📄 Chọn file phụ đề (.srt)
+                  </button>
+                </>
+              ) : (
+                <div className="muted small">
+                  Nhạc nền giảm còn {duckPercent}% trong lúc giọng đọc nói, theo mốc của {baseName(srtNgoai)}.
+                </div>
+              )}
+              {duckingEnabled && (
+                <>
+                  <label className="volume-row">
+                    <span>Nhạc nền giảm còn</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      step="5"
+                      value={duckPercent}
+                      onChange={(event) => setDuckPercent(Number(event.target.value))}
+                    />
+                    <span className="volume-value">{duckPercent}%</span>
+                  </label>
+                  <label className="volume-row">
+                    <span>Nhỏ dần trong</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="1000"
+                      step="50"
+                      value={duckAttackMs}
+                      onChange={(event) => setDuckAttackMs(Number(event.target.value))}
+                    />
+                    <span className="volume-value">{duckAttackMs}ms</span>
+                  </label>
+                  <label className="volume-row">
+                    <span>To lại trong</span>
+                    <input
+                      type="range"
+                      min="0"
+                      max="2000"
+                      step="50"
+                      value={duckReleaseMs}
+                      onChange={(event) => setDuckReleaseMs(Number(event.target.value))}
+                    />
+                    <span className="volume-value">{duckReleaseMs}ms</span>
+                  </label>
+                </>
+              )}
             </div>
             <div className="composer-section">
               <label className="gk-check composer-head">
@@ -863,6 +946,8 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                     src={voice ? mediaUrl(voice) : undefined}
                     preload="metadata"
                     onLoadedMetadata={() => void syncVoice(!(videoRef.current?.paused ?? true))}
+                    onCanPlay={() => void syncVoice(!(videoRef.current?.paused ?? true))}
+                    onError={() => setGhepLoi('Không mở được file voice preview.')}
                   />
                   {blurEnabled &&
                     blurRegions.map((item, index) => (

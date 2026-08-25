@@ -289,6 +289,15 @@ export interface BurnReq {
   videoVolume: number
   voiceVolume: number
   logo?: LogoOverlay | null
+  ducking?: DuckingOptions
+}
+export interface DuckingOptions {
+  enabled: boolean
+  /** SRT dung de lay moc thoi gian giam am nen, doc lap voi phu de duoc ghep. */
+  timingSrt?: string | null
+  duckPercent: number
+  attackMs: number
+  releaseMs: number
 }
 /** Muc co chu user chon o tab Dich man hinh. */
 export type CoChu = 'auto' | 'nho' | 'vua' | 'lon' | 'ratlon'

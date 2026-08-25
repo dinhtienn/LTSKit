@@ -7,11 +7,13 @@ import { debugRaw, errLabel, logInfo } from './logger'
 import {
   buildComposerPlan,
   decodeAuxiliaryAsset,
+  duckingTimingSource,
   probeAsset,
   probeMediaWithFfmpeg,
   validateBurnRequest,
   validateAndDecodeComposerAssets
 } from './videoComposer'
+import { buildDuckingVolumeExpression, mergeDuckingWindows, parseSrtDuckingWindows } from './audioDucking'
 import type { BurnReq, BurnProgress, BurnResult, CoChu, SubtitleStyle, TextOverlay, VideoRect } from '../shared/types'
 
 let child: ChildProcess | null = null
@@ -531,6 +533,7 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       giay: probe.duration
     }
     let composerReq = req
+    let duckingExpression: string | undefined
     const textOverlays = req.textOverlays ?? []
     const hasBurnAss = (Boolean(req.srt) && req.mode === 'burn') || textOverlays.length > 0
 
@@ -544,6 +547,33 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       composerReq = { ...req, srt: 'sub.srt' }
     }
 
+    if (req.ducking?.enabled) {
+      // Ducking co the bam theo mot SRT rieng (voiceover.srt) ke ca khi nguoi
+      // dung khong ghep phu de vao video.
+      const timingSrt = duckingTimingSource(req)
+      const timingText =
+        timingSrt && timingSrt === req.srt
+          ? await readFile(srtTam, 'utf8')
+          : timingSrt
+            ? await readFile(timingSrt, 'utf8')
+            : ''
+      const windows = mergeDuckingWindows(
+        parseSrtDuckingWindows(timingText),
+        req.ducking.attackMs,
+        req.ducking.releaseMs
+      )
+      if (windows.length > 0) {
+        duckingExpression = buildDuckingVolumeExpression({
+          baseVolume: req.videoVolume / 100,
+          duckPercent: req.ducking.duckPercent,
+          attackMs: req.ducking.attackMs,
+          releaseMs: req.ducking.releaseMs,
+          windows
+        })
+        logInfo(`Dịch màn hình: giảm âm nền theo ${windows.length} đoạn voice-over.`)
+      }
+    }
+
     if (hasBurnAss) {
       const cues = req.srt && req.mode === 'burn' ? docSrt(await readFile(srtTam, 'utf8')) : []
       const subRect = req.subRegion ?? req.region
@@ -552,7 +582,7 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       await writeFile(assTam, taoAss(cues, meta, bc, textOverlays, textFontFamily, req.subtitleStyle), 'utf8')
     }
 
-    const plan = buildComposerPlan(composerReq, probe, 'sub.ass')
+    const plan = buildComposerPlan(composerReq, probe, 'sub.ass', duckingExpression)
     const inputArgs: string[] = ['-i', req.video]
     for (const [index, input] of plan.inputs.entries()) {
       if (req.logo && index === 0) inputArgs.push('-loop', '1')
