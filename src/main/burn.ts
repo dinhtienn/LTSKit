@@ -14,6 +14,12 @@ import {
   validateAndDecodeComposerAssets
 } from './videoComposer'
 import { buildDuckingVolumeExpression, mergeDuckingWindows, parseSrtDuckingWindows } from './audioDucking'
+import {
+  LANDSCAPE_SCALE,
+  PORTRAIT_SCALE,
+  subtitleFontSize,
+  type SubtitleScale
+} from '../shared/subtitleLayout'
 import type { BurnReq, BurnProgress, BurnResult, CoChu, SubtitleStyle, TextOverlay, VideoRect } from '../shared/types'
 
 let child: ChildProcess | null = null
@@ -98,31 +104,16 @@ export interface BoCuc {
  * muc be rong cho phep, bi chan het ve cung MOT so (user doi Vua/Lon/Rat lon ma
  * chu khong nhuc nhich). Voi video doc phai lay moc theo BE RONG.
  */
-interface ThamSo {
-  theoCao: boolean // moc tinh co chu: chieu cao (ngang) hay be rong (doc)
-  tuDong: number // co chu tu dong khi KHONG co khung mo
-  thang: Record<'nho' | 'vua' | 'lon' | 'ratlon', number>
-  min: number
-  max: number
+interface ThamSo extends SubtitleScale {
   le: number // le trai/phai (ti le be rong)
 }
-// Ngang: GIU NGUYEN so cu (dang chay tot, khong dung vao).
+// Bo tham so co chu nam o `src/shared/subtitleLayout.ts` de preview dung chung.
 const NGANG: ThamSo = {
-  theoCao: true,
-  tuDong: 0.042,
-  thang: { nho: 0.025, vua: 0.035, lon: 0.045, ratlon: 0.055 },
-  min: 0.02,
-  max: 0.055,
+  ...LANDSCAPE_SCALE,
   le: 0.04
 }
-// Doc: moc theo be rong, chu to hon va cho phep 2-3 dong (kieu TikTok/Reels).
-// Thang trai deu tu min den max nen khong con canh 3 muc ra cung mot co.
 const DOC: ThamSo = {
-  theoCao: false,
-  tuDong: 0.045,
-  thang: { nho: 0.035, vua: 0.045, lon: 0.055, ratlon: 0.065 },
-  min: 0.035,
-  max: 0.065,
+  ...PORTRAIT_SCALE,
   le: 0.05
 }
 
@@ -138,16 +129,9 @@ export function boCuc(meta: Meta, region?: VideoRect | null, coChu?: CoChu, lamM
   const rong = meta.w > 0 ? meta.w : 1280
   // Vuong (1:1) tinh la DOC -> moc theo be rong, dung y do.
   const ts = rong < co ? DOC : NGANG
-  const moc = ts.theoCao ? co : rong
   const marginH = Math.round(rong * ts.le)
-  const fMin = Math.round(moc * ts.min)
-  const fMax = Math.max(fMin, Math.round(moc * ts.max))
-  const chan = (px: number): number => Math.max(fMin, Math.min(fMax, Math.round(px)))
-  // KHONG con chan theo be rong nua: tu xuong dong (WrapStyle 0) da lo chuyen
-  // tran ngang, nen chan them chi lam thang co chu bi bop lai.
-  const tay = coChu && coChu !== 'auto' ? ts.thang[coChu] : null
 
-  let fontSize = tay ? chan(moc * tay) : chan(moc * ts.tuDong)
+  let fontSize = subtitleFontSize({ w: rong, h: co, coChu })
   let che = false
   let x = 0
   let bw = rong
@@ -163,8 +147,7 @@ export function boCuc(meta: Meta, region?: VideoRect | null, coChu?: CoChu, lamM
     y = Math.max(0, region.y0)
     bw = Math.min(rong - x, region.x1 - region.x0)
     bh = Math.min(co - y, region.y1 - region.y0)
-    // Tu dong khi CO khung: theo chieu cao khung user keo (1 dong vua khung).
-    fontSize = tay ? chan(moc * tay) : chan(bh * 0.5)
+    fontSize = subtitleFontSize({ w: rong, h: co, coChu, region })
     che = !!lamMo // chi mo khi user tick
   }
   const tamX = coKhung ? Math.round(((region as VideoRect).x0 + (region as VideoRect).x1) / 2) : null

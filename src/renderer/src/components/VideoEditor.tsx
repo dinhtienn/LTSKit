@@ -2,6 +2,7 @@ import type { JSX } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BlurRegion, CoChu, MediaProbe, SubtitleStyle, TextOverlay, VideoRect } from '../../../shared/types'
 import { duckGainAt, mergeDuckWindows } from '../../../shared/duckingEnvelope'
+import { subtitleFontSize } from '../../../shared/subtitleLayout'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
 import { mediaUrl } from '../lib/mediaUrl'
@@ -1062,7 +1063,15 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                             width: `${((subRegion.x1 - subRegion.x0) / media.width) * 100}%`,
                             height: `${((subRegion.y1 - subRegion.y0) / media.height) * 100}%`,
                             fontFamily: FONT_FAMILIES[subtitleFontId] ?? 'Arial',
-                            fontSize: Math.max(10, (coChu === 'auto' ? (subRegion.y1 - subRegion.y0) * 0.22 : ({ nho: 32, vua: 44, lon: 58, ratlon: 72 }[coChu] ?? 44)) * (boxH / media.height)),
+                            fontSize: Math.max(
+                              10,
+                              subtitleFontSize({
+                                w: media.width,
+                                h: media.height,
+                                coChu: coChu as CoChu,
+                                region: subRegion
+                              }) * (boxH / media.height)
+                            ),
                             color: hexAlpha(subtitleTextColor, subtitleTextOpacity),
                             textShadow: subtitleOutlinePx > 0 ? `0 0 ${Math.max(1, subtitleOutlinePx * boxH / media.height)}px ${subtitleOutlineColor}` : 'none'
                           }}
