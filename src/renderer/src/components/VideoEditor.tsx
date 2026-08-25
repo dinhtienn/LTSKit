@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { BlurRegion, CoChu, MediaProbe, SubtitleStyle, TextOverlay, VideoRect } from '../../../shared/types'
+import { duckGainAt, mergeDuckWindows } from '../../../shared/duckingEnvelope'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
 import { mediaUrl } from '../lib/mediaUrl'
@@ -137,10 +138,64 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
     }
   }, [srtNgoai])
 
+  // Preview phai nghe giong ban xuat: dung cung duong bao gain voi FFmpeg.
+  const duckWindows = useMemo(
+    () =>
+      duckingEnabled && voiceEnabled && voice && subtitleCues.length > 0
+        ? mergeDuckWindows(
+            subtitleCues.map((cue) => ({ start: cue.startSec, end: cue.endSec })),
+            duckAttackMs,
+            duckReleaseMs
+          )
+        : [],
+    [duckingEnabled, voiceEnabled, voice, subtitleCues, duckAttackMs, duckReleaseMs]
+  )
+
   useEffect(() => {
     const videoEl = videoRef.current
-    if (videoEl) videoEl.volume = Math.min(1, videoVolume / 100)
-  }, [video, videoVolume])
+    if (!videoEl) return
+    const base = Math.min(1, videoVolume / 100)
+    if (!duckWindows.length) {
+      videoEl.volume = base
+      return
+    }
+    const options = {
+      baseVolume: videoVolume / 100,
+      duckPercent,
+      attackMs: duckAttackMs,
+      releaseMs: duckReleaseMs
+    }
+    // `timeupdate` chi ban khoang 4 lan/giay nen ramp 150ms se nghe giat cap.
+    // Bam theo khung hinh trong luc phat de duong bao muot nhu ban xuat.
+    const apply = (): void => {
+      videoEl.volume = duckGainAt(duckWindows, videoEl.currentTime, options)
+    }
+    apply()
+    let frame = 0
+    const tick = (): void => {
+      apply()
+      frame = requestAnimationFrame(tick)
+    }
+    if (!videoEl.paused) frame = requestAnimationFrame(tick)
+    const start = (): void => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(tick)
+    }
+    const stop = (): void => {
+      cancelAnimationFrame(frame)
+      apply()
+    }
+    videoEl.addEventListener('play', start)
+    videoEl.addEventListener('pause', stop)
+    videoEl.addEventListener('seeked', apply)
+    return () => {
+      cancelAnimationFrame(frame)
+      videoEl.removeEventListener('play', start)
+      videoEl.removeEventListener('pause', stop)
+      videoEl.removeEventListener('seeked', apply)
+      videoEl.volume = base
+    }
+  }, [video, videoVolume, duckWindows, duckPercent, duckAttackMs, duckReleaseMs])
 
   const syncVoice = async (shouldPlay: boolean, canStart = true): Promise<void> => {
     const sync = ++voiceSyncRef.current

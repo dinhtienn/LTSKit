@@ -1,7 +1,7 @@
-export interface DuckingWindow {
-  start: number
-  end: number
-}
+import { mergeDuckWindows, type DuckWindow } from '../shared/duckingEnvelope'
+
+export type DuckingWindow = DuckWindow
+export { mergeDuckWindows as mergeDuckingWindows }
 
 function parseTimestamp(value: string): number | null {
   const match = /^(\d+):(\d{2}):(\d{2})[,.](\d{3})$/.exec(value.trim())
@@ -22,26 +22,6 @@ export function parseSrtDuckingWindows(srt: string): DuckingWindow[] {
       return end > start ? { start, end } : null
     })
     .filter((window): window is DuckingWindow => window !== null)
-}
-
-export function mergeDuckingWindows(
-  windows: DuckingWindow[],
-  attackMs: number,
-  releaseMs: number
-): DuckingWindow[] {
-  const attack = Math.max(0, attackMs) / 1000
-  const release = Math.max(0, releaseMs) / 1000
-  const expanded = windows
-    .filter((window) => Number.isFinite(window.start) && Number.isFinite(window.end) && window.end > window.start)
-    .map((window) => ({ start: Math.max(0, window.start - attack), end: window.end + release }))
-    .sort((left, right) => left.start - right.start)
-  const merged: DuckingWindow[] = []
-  for (const window of expanded) {
-    const previous = merged.at(-1)
-    if (previous && window.start <= previous.end) previous.end = Math.max(previous.end, window.end)
-    else merged.push({ ...window })
-  }
-  return merged
 }
 
 const round = (value: number): string => String(Number(value.toFixed(6)))
