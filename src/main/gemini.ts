@@ -1,4 +1,5 @@
 import { readFile, writeFile, rm } from 'node:fs/promises'
+import { basename, dirname } from 'node:path'
 import { debugRaw, errLabel, logInfo } from './logger'
 import {
   DICH_LANGS,
@@ -8,6 +9,8 @@ import {
 } from '../shared/types'
 import { firstKey, getKey, hasKey, listKeys, loadKey, saveKey } from './geminiStore'
 import { advanceModelCursor, orderedPool } from './geminiModels'
+import { jobCacheRoot, readCachedOutputs, writeCachedOutputs } from './jobCache'
+import { translationJobKey } from './jobIdentity'
 import { createGeminiKeyPool, type GeminiKeyLease, type GeminiKeyPool } from './geminiKeyPool'
 export { hasKey, loadKey, saveKey }
 
@@ -348,6 +351,31 @@ export async function translateSrt(
   const blocks = parseSrt(await readFile(srtPath, 'utf-8'))
   if (!blocks.length) return { ok: false, error: 'File phụ đề trống.' }
 
+  // Cache chi dung cho duong Gemini that. Mot `generate` do ben goi truyen vao
+  // khong the mo ta bang khoa, nen hai generate khac nhau se doc cua nhau.
+  const cacheable = !generate
+  const cacheKey = cacheable
+    ? await translationJobKey(srtPath, dich, await orderedPool()).catch(() => null)
+    : null
+  if (cacheKey) {
+    const cached = await readCachedOutputs(
+      jobCacheRoot(),
+      'translation',
+      cacheKey,
+      dirname(outPath)
+    ).catch(() => null)
+    if (cached?.outputs.length) {
+      logInfo(`Dịch phụ đề: dùng lại bản dịch đã lưu cho ${basename(srtPath)}`)
+      onProgress?.(blocks.length, blocks.length)
+      return {
+        ok: true,
+        count: Number(cached.meta.count) || 0,
+        output: cached.outputs[0],
+        verified: cached.meta.verified === true
+      }
+    }
+  }
+
   let lease: GeminiKeyLease | null = null
   const call: GeminiGenerate = generate ?? (async (sys, user, schema) => {
     while (true) {
@@ -386,5 +414,14 @@ export async function translateSrt(
   else await rm(outPath, { force: true })
   await writeFile(saved, buildSrt(ra), 'utf-8')
   logInfo(`Dịch phụ đề: xong ${ra.length} câu${verified ? '' : ' (chưa xác nhận ngôn ngữ)'}.`)
+  if (cacheKey) {
+    void writeCachedOutputs(jobCacheRoot(), 'translation', cacheKey, [saved], {
+      count: ra.length,
+      verified
+    }).catch((err) => {
+      // Khong luu duoc cache thi lan sau dich lai, khong anh huong ket qua.
+      debugRaw('translation cache write', err)
+    })
+  }
   return { ok: true, count: ra.length, output: saved, verified }
 }

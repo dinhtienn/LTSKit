@@ -293,8 +293,8 @@ export default function Settings(): JSX.Element {
         <div className="card settings-card">
           <div className="cookie-title">Kết quả đã lưu</div>
           <div className="muted small">
-            Phụ đề tạo từ Audio→Text được giữ lại để chạy lại cùng một video không phải phiên âm lần nữa.
-            Đang dùng <b>{cacheBytes == null ? '…' : readableSize(cacheBytes)}</b>.
+            Phụ đề từ Audio→Text, Dịch màn hình và bản dịch Gemini được giữ lại để chạy lại cùng một
+            việc không phải làm lại từ đầu. Đang dùng <b>{cacheBytes == null ? '…' : readableSize(cacheBytes)}</b>.
           </div>
           <div className="cookie-actions">
             <button className="btn" onClick={clearCache} disabled={cacheBusy || cacheBytes === 0}>

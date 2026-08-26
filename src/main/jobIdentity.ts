@@ -11,6 +11,12 @@ import type { WhisperRequest } from '../shared/types'
  */
 export const JOB_IDENTITY_VERSION = 1
 
+/**
+ * Tang so nay moi khi sua prompt dich: prompt khac thi ban dich khac, nen ket
+ * qua da luu bang prompt cu khong con dung de dung lai.
+ */
+export const TRANSLATION_PROMPT_VERSION = 1
+
 /** Dau van tay cua file input: doi ten, doi kich thuoc hay sua noi dung deu doi khoa. */
 async function inputFingerprint(path: string): Promise<{
   path: string
@@ -50,5 +56,40 @@ export async function whisperJobKey(req: WhisperRequest): Promise<string> {
     device: req.device,
     diarize: req.diarize,
     speakers: req.diarize ? req.speakers : 0
+  })
+}
+
+/**
+ * OCR doc chu trong MOT vung cua khung hinh, nen vung doc la phan cua khoa.
+ * Chuan hoa canh giong `buildOcrArgs` de cung mot vung khong sinh hai cache.
+ */
+export async function ocrJobKey(
+  input: string,
+  region: { x0: number; x1: number; y0: number; y1: number }
+): Promise<string> {
+  const edges = (a: number, b: number): [number, number] => {
+    const first = Math.max(0, Math.round(a))
+    const second = Math.max(0, Math.round(b))
+    return first <= second ? [first, second] : [second, first]
+  }
+  const [x0, x1] = edges(region.x0, region.x1)
+  const [y0, y1] = edges(region.y0, region.y1)
+  return jobKey('ocr', { input: await inputFingerprint(input), x0, x1, y0, y1 })
+}
+
+/**
+ * Ban dich phu thuoc vao file nguon, ngon ngu dich, tap model va prompt. Thu tu
+ * quay vong model KHONG tinh vao khoa: cung tap model thi ket qua tuong duong.
+ */
+export async function translationJobKey(
+  srtPath: string,
+  targetLanguage: string,
+  models: string[]
+): Promise<string> {
+  return jobKey('translation', {
+    input: await inputFingerprint(srtPath),
+    targetLanguage,
+    models: [...new Set(models)].sort(),
+    promptVersion: TRANSLATION_PROMPT_VERSION
   })
 }

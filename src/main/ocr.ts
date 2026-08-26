@@ -5,6 +5,8 @@ import { basename, join } from 'node:path'
 import { replaceEngineDirectory } from './ocrInstall'
 import { ASSET_BASE, binDir, downloadFile, ensureDataDirs, extractZip, resolveFfmpeg } from './deps'
 import { debugRaw, errLabel, logInfo } from './logger'
+import { jobCacheRoot, readCachedOutputs, writeCachedOutputs } from './jobCache'
+import { ocrJobKey } from './jobIdentity'
 import type { OcrEngineStatus, OcrProgress, OcrResult } from '../shared/types'
 import { buildOcrArgs } from './ocrArgs'
 
@@ -113,6 +115,28 @@ export async function ocrVideo(
 
   const out = join(outputDir, basename(input).replace(/\.[^.]+$/, '') + '.srt')
   const args = buildOcrArgs(input, out, x0, x1, y0, y1, ff)
+
+  // Cache tra TRUOC khi spawn: doc chu tren video dai ton rat nhieu thoi gian,
+  // chay lai nguyen ven khi video va vung doc khong doi la vo ich. Moi loi lien
+  // quan cache deu bo qua de job van chay binh thuong.
+  const cacheKey = await ocrJobKey(input, { x0, x1, y0, y1 }).catch(() => null)
+  if (cacheKey) {
+    const cached = await readCachedOutputs(jobCacheRoot(), 'ocr', cacheKey, outputDir).catch(
+      () => null
+    )
+    if (cached?.outputs.length) {
+      logInfo(`Dịch màn hình: dùng lại kết quả đã lưu cho ${basename(input)}`)
+      onProgress({ percent: 100, text: '' })
+      return {
+        ok: true,
+        output: cached.outputs[0],
+        count: Number(cached.meta.count) || 0,
+        bandTop: typeof cached.meta.bandTop === 'number' ? cached.meta.bandTop : null,
+        bandBot: typeof cached.meta.bandBot === 'number' ? cached.meta.bandBot : null
+      }
+    }
+  }
+
   logInfo(`Dịch màn hình: bắt đầu đọc ${basename(input)}…`)
 
   return new Promise<OcrResult>((resolve) => {
@@ -181,6 +205,16 @@ export async function ocrVideo(
       child = null
       if (doneOut) {
         logInfo(`Dịch màn hình: xong ${count} câu.`)
+        if (cacheKey) {
+          void writeCachedOutputs(jobCacheRoot(), 'ocr', cacheKey, [doneOut], {
+            count,
+            ...(bandTop === null ? {} : { bandTop }),
+            ...(bandBot === null ? {} : { bandBot })
+          }).catch((err) => {
+            // Khong luu duoc cache thi lan sau doc lai, khong anh huong ket qua.
+            debugRaw('ocr cache write', err)
+          })
+        }
         resolve({ ok: true, output: doneOut, count, bandTop, bandBot })
         return
       }
