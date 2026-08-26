@@ -1,5 +1,11 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
+import {
+  loadOutputDirectories,
+  saveOutputDirectory,
+  type OutputDirectories,
+  type OutputDirectoryKey
+} from './lib/outputDirectories'
 import SetupScreen from './components/SetupScreen'
 import Downloader from './components/Downloader'
 import AudioText from './components/AudioText'
@@ -95,8 +101,14 @@ export default function App(): JSX.Element {
   const [tab, setTab] = useState<TabKey>('download')
   const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
-  // Thu muc luu dung CHUNG cho moi tab; nho qua cac lan mo app
-  const [outputDir, setOutputDir] = useState('')
+  // Moi tab co thu muc rieng; lan dau migrate tu khoa outputDir cu.
+  const [outputDirs, setOutputDirs] = useState<OutputDirectories>({
+    download: '',
+    audiotext: '',
+    screen: '',
+    editor: '',
+    tts: ''
+  })
   // "Hop thu" gui file tu tab Tai xuong sang tab Audio->Text (nut "Lay sub")
   const [subInbox, setSubInbox] = useState<{ path: string; id: string } | null>(null)
 
@@ -107,12 +119,12 @@ export default function App(): JSX.Element {
 
   const openSettings = (): void => setTab('settings')
 
-  const updateOutputDir = (d: string): void => {
-    setOutputDir(d)
+  const updateOutputDir = (key: OutputDirectoryKey, directory: string): void => {
+    setOutputDirs((current) => ({ ...current, [key]: directory }))
     try {
-      localStorage.setItem('ltskit.outputDir', d)
+      saveOutputDirectory(key, directory)
     } catch {
-      /* bo qua */
+      /* bo qua loi luu tuy chon */
     }
   }
 
@@ -125,9 +137,13 @@ export default function App(): JSX.Element {
   useEffect(() => {
     void check()
     void window.api.appVersion().then(setVersion)
-    const saved = localStorage.getItem('ltskit.outputDir')
-    if (saved) setOutputDir(saved)
-    else void window.api.downloadsDir().then(setOutputDir)
+    void window.api.downloadsDir().then((downloads) => {
+      try {
+        setOutputDirs(loadOutputDirectories(localStorage.getItem('ltskit.outputDir'), downloads))
+      } catch {
+        setOutputDirs(loadOutputDirectories(null, downloads))
+      }
+    })
     const offUpd = window.api.onUpdateStatus(setUpdate)
     return offUpd
   }, [])
@@ -207,16 +223,16 @@ export default function App(): JSX.Element {
           {/* Giữ màn hình tải luôn mounted để không mất hàng đợi và tiến độ khi chuyển tab. */}
           <div className={`tab-pane ${tab === 'download' ? '' : 'hidden'}`}>
             <Downloader
-              outputDir={outputDir}
-              setOutputDir={updateOutputDir}
+              outputDir={outputDirs.download}
+              setOutputDir={(directory) => updateOutputDir('download', directory)}
               onGetSub={sendToSub}
               onOpenSettings={openSettings}
             />
           </div>
           <div className={`tab-pane ${tab === 'audiotext' ? '' : 'hidden'}`}>
             <AudioText
-              outputDir={outputDir}
-              setOutputDir={updateOutputDir}
+              outputDir={outputDirs.audiotext}
+              setOutputDir={(directory) => updateOutputDir('audiotext', directory)}
               subInbox={subInbox}
               active={tab === 'audiotext'}
               onOpenSettings={openSettings}
@@ -227,17 +243,17 @@ export default function App(): JSX.Element {
               app — dung y user chot. */}
           <div className={`tab-pane ${tab === 'screen' ? '' : 'hidden'}`}>
             <ScreenText
-              outputDir={outputDir}
-              setOutputDir={updateOutputDir}
+              outputDir={outputDirs.screen}
+              setOutputDir={(directory) => updateOutputDir('screen', directory)}
               active={tab === 'screen'}
               onOpenSettings={openSettings}
             />
           </div>
           <div className={`tab-pane ${tab === 'editor' ? '' : 'hidden'}`}>
-            <VideoEditor outputDir={outputDir} setOutputDir={updateOutputDir} />
+            <VideoEditor outputDir={outputDirs.editor} setOutputDir={(directory) => updateOutputDir('editor', directory)} />
           </div>
           <div className={`tab-pane ${tab === 'tts' ? '' : 'hidden'}`}>
-            <TextToSpeech outputDir={outputDir} setOutputDir={updateOutputDir} />
+            <TextToSpeech outputDir={outputDirs.tts} setOutputDir={(directory) => updateOutputDir('tts', directory)} />
           </div>
           {tab === 'settings' && <Settings />}
           {tab === 'logs' && <Logs />}

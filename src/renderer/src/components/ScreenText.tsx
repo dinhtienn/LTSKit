@@ -4,6 +4,7 @@ import type { MediaProbe, VideoRect } from '../../../shared/types'
 import { hasFeature } from '../lib/license'
 import { defaultOcrRegion, formatOcrRegionForNotebook } from '../lib/ocrRegionGeometry'
 import { usePersistedState } from '../lib/persist'
+import { translationOutputPath } from '../lib/translationOutputPath'
 import RegionBox from './RegionBox'
 import TranslationControl from './TranslationControl'
 import VideoStage from './VideoStage'
@@ -171,7 +172,7 @@ export default function ScreenText({
       const outputs = [result.output!]
       if (translationTarget !== 'none') {
         setBuoc('dich')
-        const translated = result.output!.replace(/\.srt$/i, `.${translationTarget}.srt`)
+        const translated = translationOutputPath(result.output!, outputDir, translationTarget)
         const translation = await window.api.geminiTranslateSrt(`screen-text-${crypto.randomUUID()}`, result.output!, translated, translationTarget)
         if (!translation.ok || !translation.output) {
           setLoi(`Dịch: ${translation.error}`)

@@ -4,6 +4,7 @@ import type { GpuInfo, WhisperRequest } from '../../../shared/types'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
 import { useQueueRunner } from '../lib/useQueueRunner'
+import { translationOutputPath } from '../lib/translationOutputPath'
 import { queueSelectionState, selectedQueueItems, toggleAllQueueItems } from '../lib/queueSelection'
 import RunControls from './RunControls'
 import TranslationControl from './TranslationControl'
@@ -239,7 +240,7 @@ export default function AudioText({
         return
       }
       setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, status: 'translating' } : x)))
-      const out = it.input.replace(/\.srt$/i, `.${translationTarget}.srt`)
+      const out = translationOutputPath(it.input, outputDir, translationTarget)
       const task = (async (): Promise<void> => {
         const translation = await window.api.geminiTranslateSrt(it.id, it.input, out, translationTarget)
         setItems((prev) => prev.map((x) => x.id === it.id ? {
@@ -270,7 +271,7 @@ export default function AudioText({
         setItems((prev) =>
           prev.map((x) => (x.id === it.id ? { ...x, status: 'translating' } : x))
         )
-        const out = srt.replace(/\.srt$/i, `.${translationTarget}.srt`)
+        const out = translationOutputPath(srt, outputDir, translationTarget)
         const task = (async (): Promise<void> => {
           const t = await window.api.geminiTranslateSrt(it.id, srt, out, translationTarget)
           if (t.ok && t.output) {
