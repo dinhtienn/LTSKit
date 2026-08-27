@@ -14,6 +14,7 @@ import {
   validateAndDecodeComposerAssets
 } from './videoComposer'
 import { buildDuckingVolumeExpression, mergeDuckingWindows, parseSrtDuckingWindows } from './audioDucking'
+import { videoEncoderCandidates, type VideoEncoderCandidate } from './videoEncoders'
 import {
   LANDSCAPE_SCALE,
   PORTRAIT_SCALE,
@@ -580,29 +581,8 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
     commonArgs.push(...(plan.changesAudio ? ['-c:a', 'aac', '-b:a', '192k'] : ['-c:a', 'copy']))
     commonArgs.push('-t', String(meta.giay))
 
-    const encoders: Array<{ ten: string; gpu: boolean; args: string[] }> = plan.changesPixels
-      ? [
-          {
-            ten: 'h264_nvenc',
-            gpu: true,
-            args: ['-c:v', 'h264_nvenc', '-preset', 'p4', '-cq', '23']
-          },
-          {
-            ten: 'h264_amf',
-            gpu: true,
-            args: ['-c:v', 'h264_amf', '-quality', 'balanced', '-rc', 'cqp', '-qp_i', '23', '-qp_p', '23']
-          },
-          {
-            ten: 'h264_qsv',
-            gpu: true,
-            args: ['-c:v', 'h264_qsv', '-global_quality', '23']
-          },
-          {
-            ten: 'libx264',
-            gpu: false,
-            args: ['-c:v', 'libx264', '-preset', 'medium', '-crf', '20']
-          }
-        ]
+    const encoders: VideoEncoderCandidate[] = plan.changesPixels
+      ? videoEncoderCandidates(req.exportSpeed)
       : [{ ten: 'copy', gpu: false, args: ['-c:v', 'copy'] }]
 
     logInfo(`Dịch màn hình: ghép nội dung vào ${basename(req.video)}…`)
@@ -616,8 +596,15 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       if (validOutput) {
         const promotion = await promoteOutput(attemptOutput, output, burnLifecycle)
         if (promotion === 'cancelled') return { ok: false, error: 'Đã huỷ.' }
-        logInfo(`Dịch màn hình: ghép video xong${enc.gpu ? ' (tăng tốc GPU)' : ''}.`)
+        logInfo(
+          `Dịch màn hình: ghép video xong bằng ${enc.ten}${enc.gpu ? ' (tăng tốc GPU)' : ' (chạy bằng CPU)'}.`
+        )
         return { ok: true, output }
+      }
+      // Nguoi dung can biet vi sao may chay CPU thay vi GPU — im lang o day
+      // khien viec xuat cham ma khong ai doan duoc nguyen nhan.
+      if (attempt < encoders.length - 1) {
+        logInfo(`Dịch màn hình: ${enc.ten} không dùng được, thử encoder tiếp theo…`)
       }
       await rm(attemptOutput, { force: true })
     }

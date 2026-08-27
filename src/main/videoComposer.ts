@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process'
 import { dirname, extname, join } from 'node:path'
 import { resolveFfmpeg } from './deps'
 import type { BlurRegion, BurnReq, LogoDimensions, MediaProbe, VideoRect } from '../shared/types'
-import { EXPORT_BLUR_SIGMA } from '../shared/videoBlur'
+import { exportBlurFilter } from '../shared/videoBlur'
 import { displayDimensions } from '../shared/videoOrientation'
 
 export interface ComposerPlan {
@@ -341,7 +341,7 @@ export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: stri
       const y = evenCoordinate(rect.y0)
       const width = evenDimension(rect.x1 - rect.x0)
       const height = evenDimension(rect.y1 - rect.y0)
-      filters.push(`[vblur${index}]crop=${width}:${height}:${x}:${y},gblur=sigma=${EXPORT_BLUR_SIGMA}[blur${index}]`)
+      filters.push(`[vblur${index}]crop=${width}:${height}:${x}:${y},${exportBlurFilter()}[blur${index}]`)
     }
     for (const [index, rect] of blurRegions.entries()) {
       const x = evenCoordinate(rect.x0)

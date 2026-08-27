@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BlurRegion, CoChu, MediaProbe, SubtitleStyle, TextOverlay, VideoRect } from '../../../shared/types'
+import type { BlurRegion, CoChu, ExportSpeed, MediaProbe, SubtitleStyle, TextOverlay, VideoRect } from '../../../shared/types'
 import { duckGainAt, mergeDuckWindows } from '../../../shared/duckingEnvelope'
 import { subtitleFontSize } from '../../../shared/subtitleLayout'
 import { usePersistedState } from '../lib/persist'
@@ -82,6 +82,7 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
   const [activeOverlay, setActiveOverlay] = useState<'region' | 'logo'>('region')
   const [coChu, setCoChu] = usePersistedState('ltskit.ocr.cochu', 'auto')
   const [ghepMode, setGhepMode] = useState<'burn' | 'soft'>('burn')
+  const [exportSpeed, setExportSpeed] = usePersistedState('ltskit.editor.exportSpeed', 'balanced')
   const [ghep, setGhep] = useState<'idle' | 'chay' | 'xong' | 'loi'>('idle')
   const [ghepPct, setGhepPct] = useState(0)
   const [ghepOut, setGhepOut] = useState('')
@@ -383,7 +384,8 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
           attackMs: duckAttackMs,
           releaseMs: duckReleaseMs
         },
-        logo: logoEnabled && logo ? { path: logo, rect: logoRect } : null
+        logo: logoEnabled && logo ? { path: logo, rect: logoRect } : null,
+        exportSpeed: exportSpeed as ExportSpeed
       })
       if (!result.ok) {
         if (result.error === 'Đã huỷ.') setGhep('idle')
@@ -905,6 +907,20 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                 🖼 Chọn ảnh logo
               </button>
               {logo && <div className="muted small ocr-ten">{baseName(logo)}</div>}
+            </div>
+            <div className="composer-section">
+              <b>Tốc độ xuất</b>
+              <label className="field">
+                <span className="muted small">Ưu tiên gì khi xuất video</span>
+                <select value={exportSpeed} onChange={(event) => setExportSpeed(event.target.value)}>
+                  <option value="fast">Nhanh — video dài xong sớm, file lớn hơn</option>
+                  <option value="balanced">Cân bằng</option>
+                  <option value="quality">Chất lượng cao — chậm hơn, file gọn hơn</option>
+                </select>
+              </label>
+              <div className="muted small">
+                Máy sẽ tự dùng GPU nếu được; xem tab Nhật ký để biết encoder nào đã chạy.
+              </div>
             </div>
             <div className="cookie-actions">
               {ghep !== 'chay' ? (

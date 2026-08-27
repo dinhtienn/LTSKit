@@ -290,7 +290,11 @@ export interface BurnReq {
   voiceVolume: number
   logo?: LogoOverlay | null
   ducking?: DuckingOptions
+  /** Uu tien toc do hay chat luong khi xuat; mac dinh 'balanced'. */
+  exportSpeed?: ExportSpeed
 }
+/** Muc uu tien khi xuat video: nhanh, can bang, hoac chat luong cao. */
+export type ExportSpeed = 'fast' | 'balanced' | 'quality'
 export interface DuckingOptions {
   enabled: boolean
   /** SRT dung de lay moc thoi gian giam am nen, doc lap voi phu de duoc ghep. */
