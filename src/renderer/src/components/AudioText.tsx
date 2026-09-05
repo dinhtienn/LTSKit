@@ -1,15 +1,16 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { GpuInfo, WhisperRequest } from '../../../shared/types'
+import type { GpuInfo, OptimizeSrtResult, SubtitlePurpose, WhisperRequest } from '../../../shared/types'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
 import { useQueueRunner } from '../lib/useQueueRunner'
 import { translationOutputPath } from '../lib/translationOutputPath'
 import { queueSelectionState, selectedQueueItems, toggleAllQueueItems } from '../lib/queueSelection'
 import RunControls from './RunControls'
+import SubtitleEditor from './SubtitleEditor'
 import TranslationControl from './TranslationControl'
 
-type ItemStatus = 'queued' | 'running' | 'translating' | 'done' | 'error'
+type ItemStatus = 'queued' | 'running' | 'translating' | 'optimizing' | 'done' | 'error'
 
 interface WhItem {
   id: string
@@ -24,6 +25,13 @@ interface WhItem {
   error: string | null
   kind: 'media' | 'srt'
   translationVerified: boolean | null
+  optimization: {
+    rewrittenCues: number
+    retimedCues: number
+    remainingOverCps: number
+    averageCps: number
+    warnings: number
+  } | null
 }
 
 // Cac muc model cho user chon (can bang toc do / chinh xac / dung luong tai).
@@ -70,6 +78,8 @@ export default function AudioText({
   const [fmtSrt, setFmtSrt] = usePersistedState('ltskit.wh.srt', true)
   const [fmtTxt, setFmtTxt] = usePersistedState('ltskit.wh.txt', false)
   const [fmtVtt, setFmtVtt] = usePersistedState('ltskit.wh.vtt', false)
+  const [subtitlePurpose, setSubtitlePurpose] = usePersistedState<SubtitlePurpose>('ltskit.wh.purpose', 'standard')
+  const [targetCps, setTargetCps] = usePersistedState('ltskit.wh.targetCps', 20)
 
   const storedDich = (() => {
     try {
@@ -87,6 +97,64 @@ export default function AudioText({
   )
   const translationTarget = translationEnabled ? dich : 'none'
   const [dichErr, setDichErr] = useState<string | null>(null)
+  const [editingPath, setEditingPath] = useState<string | null>(null)
+  const [savedOutput, setSavedOutput] = useState<string | null>(null)
+
+  const subtitleOptimize = async (id: string, inputPath: string): Promise<OptimizeSrtResult> => {
+    return window.api.subtitleOptimize(id, {
+      inputPath,
+      outputDir,
+      targetCps: Math.max(1, Math.min(60, Number(targetCps) || 20))
+    })
+  }
+
+  const prepareSubtitle = async (it: WhItem, sourceSrt: string): Promise<{
+    output: string
+    translationVerified: boolean | null
+    optimization: WhItem['optimization']
+  } | null> => {
+    let output = sourceSrt
+    let translationVerified: boolean | null = null
+    if (translationTarget !== 'none') {
+      setItems((current) => current.map((item) => item.id === it.id ? { ...item, status: 'translating' } : item))
+      const translatedPath = translationOutputPath(sourceSrt, outputDir, translationTarget)
+      const translation = await window.api.geminiTranslateSrt(it.id, sourceSrt, translatedPath, translationTarget)
+      if (!translation.ok || !translation.output) {
+        setItems((current) => current.map((item) => item.id === it.id ? {
+          ...item,
+          status: 'error',
+          selected: true,
+          error: translation.error ?? 'Dịch thất bại.'
+        } : item))
+        return null
+      }
+      output = translation.output
+      translationVerified = translation.verified ?? null
+    }
+    if (subtitlePurpose !== 'dubbing') return { output, translationVerified, optimization: null }
+    setItems((current) => current.map((item) => item.id === it.id ? { ...item, status: 'optimizing' } : item))
+              const optimized = await subtitleOptimize(it.id, output)
+    if (!optimized.ok || !optimized.output) {
+      setItems((current) => current.map((item) => item.id === it.id ? {
+        ...item,
+        status: 'error',
+        selected: true,
+        error: optimized.error ?? 'Tối ưu phụ đề thất bại.'
+      } : item))
+      return null
+    }
+    return {
+      output: optimized.output,
+      translationVerified,
+        optimization: {
+        rewrittenCues: optimized.rewrittenCues ?? 0,
+        retimedCues: optimized.retimedCues ?? 0,
+        remainingOverCps: optimized.remainingOverCps ?? 0,
+        averageCps: optimized.averageCps ?? 0,
+        warnings: optimized.warnings?.length ?? 0
+      }
+    }
+  }
 
   const [items, setItems] = useState<WhItem[]>([])
   const runner = useQueueRunner<WhItem>()
@@ -176,7 +244,8 @@ export default function AudioText({
         speakers: 0,
         error: null,
         kind,
-        translationVerified: null
+        translationVerified: null,
+        optimization: null
       }))
     if (newItems.length) setItems((prev) => [...prev, ...newItems])
   }
@@ -228,10 +297,10 @@ export default function AudioText({
 
   const runItem = async (it: WhItem, waitForTranslation = true): Promise<void> => {
     setItems((prev) =>
-      prev.map((x) => (x.id === it.id ? { ...x, selected: x.selected, status: 'running', percent: 0, error: null, outputs: [], speakers: 0, translationVerified: null } : x))
+          prev.map((x) => (x.id === it.id ? { ...x, selected: x.selected, status: 'running', percent: 0, error: null, outputs: [], speakers: 0, translationVerified: null, optimization: null } : x))
     )
     if (it.kind === 'srt') {
-      if (translationTarget === 'none') {
+      if (translationTarget === 'none' && subtitlePurpose === 'standard') {
         setItems((prev) =>
           prev.map((x) =>
             x.id === it.id ? { ...x, selected: true, status: 'error', error: 'Hãy chọn ngôn ngữ đích để dịch file SRT.' } : x
@@ -239,23 +308,18 @@ export default function AudioText({
         )
         return
       }
-      setItems((prev) => prev.map((x) => (x.id === it.id ? { ...x, status: 'translating' } : x)))
-      const out = translationOutputPath(it.input, outputDir, translationTarget)
-      const task = (async (): Promise<void> => {
-        const translation = await window.api.geminiTranslateSrt(it.id, it.input, out, translationTarget)
-        setItems((prev) => prev.map((x) => x.id === it.id ? {
-          ...x,
-          status: translation.ok && translation.output ? 'done' : 'error',
-          selected: translation.ok && translation.output ? false : true,
-          percent: translation.ok ? 100 : x.percent,
-          outputs: translation.output ? [translation.output] : [],
-          translationVerified: translation.verified ?? null,
-          error: translation.ok ? null : translation.error ?? 'Dịch thất bại.'
-        } : x))
-      })()
-      translationTasks.current.add(task)
-      void task.finally(() => translationTasks.current.delete(task))
-      if (waitForTranslation) await task
+      const prepared = await prepareSubtitle(it, it.input)
+      if (!prepared) return
+      setItems((prev) => prev.map((x) => x.id === it.id ? {
+        ...x,
+        status: 'done',
+        selected: false,
+        percent: 100,
+        outputs: [prepared.output],
+        translationVerified: prepared.translationVerified,
+        error: null,
+        optimization: prepared.optimization
+      } : x))
       return
     }
 
@@ -263,41 +327,29 @@ export default function AudioText({
 
     // Dich .srt bang API key cua user (neu user da bat). Dich hong thi VAN giu
     // ban goc — suy giam nhe nhang, khong lam hong ca muc.
-    const outputs = [...res.outputs]
-    let translationVerified: boolean | null = null
-    if (res.ok && translationTarget !== 'none') {
-      const srt = res.outputs.find((o) => o.toLowerCase().endsWith('.srt'))
-      if (srt) {
-        setItems((prev) =>
-          prev.map((x) => (x.id === it.id ? { ...x, status: 'translating' } : x))
-        )
-        const out = translationOutputPath(srt, outputDir, translationTarget)
-        const task = (async (): Promise<void> => {
-          const t = await window.api.geminiTranslateSrt(it.id, srt, out, translationTarget)
-          if (t.ok && t.output) {
-            outputs.push(t.output)
-            translationVerified = t.verified ?? null
-          } else setDichErr(t.error ?? 'Dịch thất bại.')
-          setItems((prev) => prev.map((x) => x.id === it.id ? {
-            ...x,
-            status: res.ok ? 'done' : 'error',
-            selected: res.ok ? false : true,
-            percent: res.ok ? 100 : x.percent,
-            outputs,
-            translationVerified,
-            error: res.ok ? null : res.error
-          } : x))
-        })()
-        translationTasks.current.add(task)
-        void task.finally(() => translationTasks.current.delete(task))
-        if (waitForTranslation) await task
-        if (!waitForTranslation) {
-          setItems((prev) => prev.map((x) => x.id === it.id ? { ...x, status: res.ok ? 'done' : 'error', selected: res.ok ? false : true, percent: res.ok ? 100 : x.percent, outputs, speakers: res.speakers, translationVerified: null, error: res.ok ? null : res.error } : x))
-          return
-        }
-      }
+    const srt = res.outputs.find((o) => o.toLowerCase().endsWith('.srt'))
+    if (res.ok && srt) {
+      const prepared = await prepareSubtitle(it, srt)
+      if (!prepared) return
+      const outputs = subtitlePurpose === 'dubbing'
+        ? [prepared.output]
+        : [...res.outputs.filter((output) => output !== srt), prepared.output]
+      setItems((prev) => prev.map((x) => x.id === it.id ? {
+        ...x,
+        status: 'done',
+        selected: false,
+        percent: 100,
+        outputs,
+        speakers: res.speakers,
+        translationVerified: prepared.translationVerified,
+        optimization: prepared.optimization,
+        error: null
+      } : x))
+      return
     }
 
+    const outputs = res.outputs
+    const translationVerified = null
     setItems((prev) =>
       prev.map((x) =>
         x.id === it.id
@@ -318,7 +370,7 @@ export default function AudioText({
 
   const startRun = async (): Promise<void> => {
     if (!outputDir || !unlocked || (hasPendingMedia && noFormat)) return
-    if (translationEnabled) {
+    if (translationEnabled || subtitlePurpose === 'dubbing') {
       const readiness = await window.api.geminiReadiness()
       if (!readiness.hasKey) {
         setDichErr('Chưa cấu hình Gemini API key. Hãy đi đến Cài đặt để thêm key.')
@@ -342,8 +394,8 @@ export default function AudioText({
     setItems([])
   }
   const pending = selectedQueueItems(items, new Set(['queued', 'error', 'done'])).length
-  const selectionState = queueSelectionState(items, new Set(['running', 'translating']))
-  const toggleAll = (): void => setItems((current) => toggleAllQueueItems(current, selectionState !== 'all', new Set(['running', 'translating'])))
+  const selectionState = queueSelectionState(items, new Set(['running', 'translating', 'optimizing']))
+  const toggleAll = (): void => setItems((current) => toggleAllQueueItems(current, selectionState !== 'all', new Set(['running', 'translating', 'optimizing'])))
   const hasPendingMedia = items.some(
     (it) => it.selected && (it.status === 'queued' || it.status === 'error' || it.status === 'done') && it.kind === 'media'
   )
@@ -430,15 +482,15 @@ export default function AudioText({
 
         <div className="options" style={{ marginTop: 12 }}>
           <label className="check">
-            <input type="checkbox" checked={fmtSrt} onChange={(e) => setFmtSrt(e.target.checked)} />
+            <input type="checkbox" checked={subtitlePurpose === 'dubbing' || fmtSrt} disabled={subtitlePurpose === 'dubbing'} onChange={(e) => setFmtSrt(e.target.checked)} />
             Xuất .srt (phụ đề)
           </label>
           <label className="check">
-            <input type="checkbox" checked={fmtTxt} onChange={(e) => setFmtTxt(e.target.checked)} />
+            <input type="checkbox" checked={subtitlePurpose !== 'dubbing' && fmtTxt} disabled={subtitlePurpose === 'dubbing'} onChange={(e) => setFmtTxt(e.target.checked)} />
             Xuất .txt (văn bản)
           </label>
           <label className="check">
-            <input type="checkbox" checked={fmtVtt} onChange={(e) => setFmtVtt(e.target.checked)} />
+            <input type="checkbox" checked={subtitlePurpose !== 'dubbing' && fmtVtt} disabled={subtitlePurpose === 'dubbing'} onChange={(e) => setFmtVtt(e.target.checked)} />
             Xuất .vtt (sub web)
           </label>
           <label className="check">
@@ -486,15 +538,33 @@ export default function AudioText({
         )}
       </div>
 
-      <TranslationControl
+          <TranslationControl
         enabled={translationEnabled}
         setEnabled={setTranslationEnabled}
         language={dich}
         setLanguage={setDich}
         active={active}
         onOpenSettings={onOpenSettings}
-      />
-      {dichErr && <div className="dy-err small">Dịch phụ đề: {dichErr}</div>}
+          />
+          <div className="card options-card">
+            <label className="field">
+              <span>Mục đích đầu ra</span>
+              <select value={subtitlePurpose} onChange={(event) => setSubtitlePurpose(event.target.value as SubtitlePurpose)}>
+                <option value="standard">Phụ đề thông thường</option>
+                <option value="dubbing">Cho lồng tiếng</option>
+              </select>
+            </label>
+            {subtitlePurpose === 'dubbing' && (
+              <>
+                <label className="field">
+                  <span>CPS mục tiêu</span>
+                  <input type="number" min={1} max={60} step={1} value={targetCps} onChange={(event) => setTargetCps(Number(event.target.value) || 20)} />
+                </label>
+                <div className="muted small">Dịch (nếu bật) xong mới tối ưu. Chỉ câu vượt CPS mục tiêu được Gemini viết ngắn.</div>
+              </>
+            )}
+          </div>
+          {dichErr && <div className="dy-err small">Dịch phụ đề: {dichErr}</div>}
 
       {/* Tang toc GPU (tuy chon) */}
       <div className="card">
@@ -577,6 +647,24 @@ export default function AudioText({
       {/* ---------- COT PHAI: hang doi ---------- */}
       <div className="cot-ketqua cot-hangdoi">
         <div className="cot-tieude">Hàng đợi</div>
+        {editingPath && (
+          <div className="card">
+            {savedOutput && (
+              <div className="cookie-status ok" style={{ marginBottom: 10 }}>
+                Đã lưu file mới:{' '}
+                <button className="link-btn" onClick={() => window.api.showItem(savedOutput)}>
+                  {baseName(savedOutput)}
+                </button>
+              </div>
+            )}
+            <SubtitleEditor
+              path={editingPath}
+              targetCps={subtitlePurpose === 'dubbing' ? targetCps : 20}
+              onClose={() => setEditingPath(null)}
+              onSaved={(output) => setSavedOutput(output)}
+            />
+          </div>
+        )}
 
       {/* Hang doi */}
       {items.length > 0 && (
@@ -604,7 +692,7 @@ export default function AudioText({
               <div className={`qrow ${it.status}`} key={it.id}>
                 <div className="qmain">
                   <div className="qtitle" title={it.input}>
-                        <input className="queue-row-select" type="checkbox" checked={it.selected} disabled={it.status === 'running' || it.status === 'translating'} onChange={(event) => setItems((current) => current.map((item) => item.id === it.id ? { ...item, selected: event.target.checked } : item))} aria-label={`Chọn ${it.name}`} />
+                        <input className="queue-row-select" type="checkbox" checked={it.selected} disabled={it.status === 'running' || it.status === 'translating' || it.status === 'optimizing'} onChange={(event) => setItems((current) => current.map((item) => item.id === it.id ? { ...item, selected: event.target.checked } : item))} aria-label={`Chọn ${it.name}`} />
                         {it.kind === 'srt' ? '📄' : '🎧'} {it.name}
                   </div>
                   <div className="muted small">
@@ -612,26 +700,35 @@ export default function AudioText({
                       `Đang chuyển… ${it.percent > 0 ? it.percent + '%' : ''}${
                         it.language ? ' · ' + it.language : ''
                       }`}
-                    {it.status === 'done' && (
+          {it.status === 'done' && (
                       <>
-                        Xong · {it.outputs.length} tệp
-                            {it.speakers > 0 ? ` · ${it.speakers} người nói` : ''}{' '}
-                        {it.outputs.map((o) => (
-                          <button
-                            key={o}
-                            className="link-btn"
-                            onClick={() => window.api.showItem(o)}
-                            title={o}
-                          >
-                            {baseName(o)}
-                          </button>
-                        ))}
+                            Xong · {it.outputs.length} tệp
+                                {it.speakers > 0 ? ` · ${it.speakers} người nói` : ''}{' '}
+                            {it.outputs.map((o) => (
+                              <span key={o}>
+                                <button
+                                  className="link-btn"
+                                  onClick={() => window.api.showItem(o)}
+                                  title={o}
+                                >
+                                  {baseName(o)}
+                                </button>
+                                  </span>
+                            ))}
+                            {it.optimization && (
+                              <span className="muted small">
+                                {' '}
+                                · CPS {it.optimization.averageCps.toFixed(1)} · Viết ngắn {it.optimization.rewrittenCues} cue · Đổi timing {it.optimization.retimedCues} cue
+                                {it.optimization.remainingOverCps > 0 ? ` · Còn ${it.optimization.remainingOverCps} cue vượt CPS` : ''}
+                              </span>
+                            )}
                           </>
                         )}
                         {it.status === 'done' && it.translationVerified === false && (
                           <span className="qwarn"> · Chưa xác nhận ngôn ngữ</span>
                         )}
-                    {it.status === 'translating' && '✨ Đang dịch phụ đề…'}
+                        {it.status === 'translating' && '✨ Đang dịch phụ đề…'}
+                        {it.status === 'optimizing' && 'Đang tối ưu cho lồng tiếng…'}
                     {it.status === 'queued' && 'Chờ xử lý'}
                     {it.status === 'error' && (
                       <span className="dy-err" title={it.error ?? ''}>
@@ -645,15 +742,27 @@ export default function AudioText({
                     </div>
                   )}
                 </div>
-                <div className="qside">
-                  <span className={`qbadge ${it.status}`}>
+                    <div className="qside">
+                      {it.status === 'done' && it.outputs.filter((output) => output.toLowerCase().endsWith('.srt')).map((output) => (
+                        <button
+                          key={`edit-${output}`}
+                          className="btn small primary"
+                          aria-label="Mở trình sửa phụ đề"
+                          onClick={() => { setSavedOutput(null); setEditingPath(output) }}
+                        >
+                          ✎ Sửa kết quả
+                        </button>
+                      ))}
+                      <span className={`qbadge ${it.status}`}>
                     {it.status === 'running'
                       ? 'Đang chạy'
                       : it.status === 'done'
                         ? 'Xong'
-                        : it.status === 'error'
-                          ? 'Lỗi'
-                          : 'Chờ'}
+                          : it.status === 'error'
+                            ? 'Lỗi'
+                            : it.status === 'optimizing'
+                              ? 'Tối ưu'
+                            : 'Chờ'}
                   </span>
                   {it.status !== 'running' && (
                     <button className="ibtn" title="Xóa" onClick={() => removeItem(it.id)}>

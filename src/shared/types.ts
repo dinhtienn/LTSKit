@@ -358,8 +358,57 @@ export interface VieneuSrtRequest {
   outputDir: string
   voiceId: string
   speed: number
-  cpsOptions: CpsOptions
-  dubbingRewrite: DubbingRewriteOptions
+}
+
+export type SubtitlePurpose = 'standard' | 'dubbing'
+
+export interface OptimizeSrtRequest {
+  inputPath: string
+  outputDir: string
+  targetCps: number
+}
+
+export interface SubtitleOptimizeWarning {
+  cueIndex: number
+  message: string
+}
+
+export interface OptimizeSrtResult {
+  ok: boolean
+  output?: string
+  totalCues?: number
+  rewrittenCues?: number
+  retimedCues?: number
+  remainingOverCps?: number
+  averageCps?: number
+  warnings?: SubtitleOptimizeWarning[]
+  error?: string
+}
+
+export interface SubtitleOptimizeProgress {
+  jobId: string
+  done: number
+  total: number
+}
+
+export interface EditableSubtitleCue {
+  id: string
+  index: number
+  start: string
+  end: string
+  text: string
+}
+
+export interface SubtitleReadResult {
+  ok: boolean
+  cues?: EditableSubtitleCue[]
+  error?: string
+}
+
+export interface SubtitleSaveResult {
+  ok: boolean
+  output?: string
+  error?: string
 }
 
 export interface VieneuProgress {
@@ -375,7 +424,6 @@ export interface VieneuResult {
   id: string
   ok: boolean
   output: string | null
-  subtitleOutput?: string | null
   error: string | null
 }
 

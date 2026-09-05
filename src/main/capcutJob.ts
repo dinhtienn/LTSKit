@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { readFile, rename, rm, stat, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import type { DubbingRewriteOptions } from '../shared/types'
 
 export type CapcutRetryKind = 'shark' | 'busy' | 'network'
 export type CapcutTerminalStatus = 'finished' | 'failed' | 'cancelled'
@@ -68,8 +67,7 @@ export function createCapcutJobMetrics(profileCount: number): CapcutJobMetrics {
 export function capcutCueFingerprint(
   cue: CapcutCue,
   voiceId: string,
-  speed: number,
-  dubbingRewrite: DubbingRewriteOptions = { enabled: false, maxAttempts: 2, overrunRatio: 1 }
+  speed: number
 ): string {
   return createHash('sha256')
     .update(
@@ -79,7 +77,6 @@ export function capcutCueFingerprint(
         end: cue.end,
         voiceId,
         speed,
-        dubbingRewrite,
         audioProcessingVersion: AUDIO_PROCESSING_VERSION
       })
     )

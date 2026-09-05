@@ -31,6 +31,12 @@ import {
   OcrEngineStatus,
   OcrProgress,
   OcrResult,
+  OptimizeSrtRequest,
+  OptimizeSrtResult,
+  SubtitleOptimizeProgress,
+  EditableSubtitleCue,
+  SubtitleReadResult,
+  SubtitleSaveResult,
   PlaylistProbe,
   ProxyTestResult,
   SetupProgress,
@@ -193,6 +199,16 @@ const api = {
   /** Do dai file .srt (giay) — de canh bao khi lech han so voi video. */
   srtGiay: (duong: string): Promise<number> => ipcRenderer.invoke('burn:srtGiay', duong),
   srtNoiDung: (duong: string): Promise<string> => ipcRenderer.invoke('burn:srtNoiDung', duong),
+  subtitleOptimize: (jobId: string, request: OptimizeSrtRequest): Promise<OptimizeSrtResult> =>
+    ipcRenderer.invoke('subtitle:optimize', jobId, request),
+  onSubtitleOptimizeProgress: (cb: (progress: SubtitleOptimizeProgress) => void): (() => void) => {
+    const listener = (_event: unknown, progress: SubtitleOptimizeProgress): void => cb(progress)
+    ipcRenderer.on('subtitle:optimize-progress', listener)
+    return () => ipcRenderer.removeListener('subtitle:optimize-progress', listener)
+  },
+  subtitleRead: (path: string): Promise<SubtitleReadResult> => ipcRenderer.invoke('subtitle:read', path),
+  subtitleSaveEdited: (path: string, cues: EditableSubtitleCue[]): Promise<SubtitleSaveResult> =>
+    ipcRenderer.invoke('subtitle:saveEdited', path, cues),
   onBurnProgress: (cb: (p: BurnProgress) => void): (() => void) => {
     const listener = (_e: unknown, p: BurnProgress): void => cb(p)
     ipcRenderer.on('burn:progress', listener)

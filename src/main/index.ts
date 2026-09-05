@@ -44,6 +44,7 @@ import {
 } from './whisper'
 import { detectGpu } from './gpu'
 import { checkKey, hasKey, saveKey, translateSrt } from './gemini'
+import { optimizeSrtForDubbing, readEditableSubtitle, saveEditedSubtitle } from './subtitleDubbing'
 import { addKey, getKey, listKeys, removeKey } from './geminiStore'
 import { discoverModels, geminiReadiness, loadModelPool, saveModelPool } from './geminiModels'
 import { cancelOcr, installOcrEngine, ocrEngineStatus, ocrVideo } from './ocr'
@@ -74,7 +75,7 @@ import {
   clearDyCookies,
   dyCookieStatus
 } from './douyinCookies'
-import { CapcutSrtRequest, DouyinRequest, VieneuSrtRequest, WhisperRequest } from '../shared/types'
+import { CapcutSrtRequest, DouyinRequest, EditableSubtitleCue, OptimizeSrtRequest, VieneuSrtRequest, WhisperRequest } from '../shared/types'
 import {
   clearLogs,
   debugRaw,
@@ -509,6 +510,13 @@ function registerIpc(): void {
         event.sender.send('gemini:progress', { jobId, done: d, total: t }), undefined, jobId
       )
   )
+  ipcMain.handle('subtitle:optimize', async (event, jobId: string, request: OptimizeSrtRequest) =>
+    optimizeSrtForDubbing(jobId, request, (done, total) =>
+      event.sender.send('subtitle:optimize-progress', { jobId, done, total })
+    )
+  )
+  ipcMain.handle('subtitle:read', async (_event, path: string) => readEditableSubtitle(path))
+  ipcMain.handle('subtitle:saveEdited', async (_event, path: string, cues: EditableSubtitleCue[]) => saveEditedSubtitle(path, cues))
 
   // ---- Text -> Giọng (VieNeu-TTS v3 native) ----
   ipcMain.handle('vieneu:engineStatus', async () => vieneuEngineStatus())

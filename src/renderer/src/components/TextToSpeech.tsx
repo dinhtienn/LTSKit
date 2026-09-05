@@ -39,9 +39,6 @@ export default function TextToSpeech({
   const voiceId = provider === 'capcut' ? voiceIdCapcut : voiceIdVieneu
   const setVoiceId = provider === 'capcut' ? setVoiceIdCapcut : setVoiceIdVieneu
   const [speed, setSpeed] = usePersistedState('ltskit.tts.speed', 1)
-  const [cpsOptimization, setCpsOptimization] = usePersistedState('ltskit.tts.cpsOptimization', false)
-  const [targetCps, setTargetCps] = usePersistedState('ltskit.tts.targetCps', 20)
-  const [dubbingRewrite, setDubbingRewrite] = usePersistedState('ltskit.tts.dubbingRewrite', false)
   const [capcutProfiles, setCapcutProfiles] = usePersistedState('ltskit.tts.capcutProfiles', 1)
   const [srtPath, setSrtPath] = useState('')
   const [running, setRunning] = useState(false)
@@ -50,7 +47,6 @@ export default function TextToSpeech({
   const [statusLine, setStatusLine] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [output, setOutput] = useState<string | null>(null)
-  const [subtitleOutput, setSubtitleOutput] = useState<string | null>(null)
   const [previewBusy, setPreviewBusy] = useState(false)
   const [previewErr, setPreviewErr] = useState<string | null>(null)
 
@@ -140,7 +136,6 @@ export default function TextToSpeech({
     if (p) {
       setSrtPath(p)
       setOutput(null)
-      setSubtitleOutput(null)
       setError(null)
     }
   }
@@ -234,23 +229,7 @@ export default function TextToSpeech({
     setStatusLine('Đang chuẩn bị…')
     setError(null)
     setOutput(null)
-    setSubtitleOutput(null)
-    const req = {
-      srt: srtPath,
-      outputDir,
-      voiceId,
-      speed,
-      cpsOptions: {
-        enabled: cpsOptimization,
-        targetCps: Math.max(1, Number(targetCps) || 20),
-        maxExpandSeconds: 0.5,
-        minGapSeconds: 0.1,
-        maxBoundaryShiftSeconds: 0.5,
-        minDurationSeconds: 0.8,
-        balancePasses: 5
-      },
-      dubbingRewrite: { enabled: dubbingRewrite, maxAttempts: 2, overrunRatio: 1 }
-    }
+    const req = { srt: srtPath, outputDir, voiceId, speed }
     const res =
       provider === 'capcut'
         ? await window.api.capcutSrtToMp3(id, { ...req, profileCount: capcutProfiles })
@@ -259,7 +238,6 @@ export default function TextToSpeech({
     setJobId(null)
     if (res.ok && res.output) {
       setOutput(res.output)
-      setSubtitleOutput(res.subtitleOutput ?? null)
       setPercent(100)
       setStatusLine('Xong')
     } else setError(res.error ?? 'Tạo MP3 thất bại.')
@@ -476,23 +454,6 @@ export default function TextToSpeech({
               onChange={(e) => setSpeed(Number(e.target.value))}
             />
           </label>
-          <label className="check-row">
-            <input type="checkbox" checked={dubbingRewrite} onChange={(event) => setDubbingRewrite(event.target.checked)} disabled={running} />
-            <span>Tối ưu câu quá dài bằng Gemini</span>
-          </label>
-          <div className="muted small">Chỉ ảnh hưởng phần giọng đọc nội bộ, không thay đổi file SRT.</div>
-          <label className="check-row">
-            <input type="checkbox" checked={cpsOptimization} onChange={(event) => setCpsOptimization(event.target.checked)} disabled={running} />
-            <span>Tối ưu CPS và xuất voiceover.srt</span>
-          </label>
-          {cpsOptimization && (
-            <label className="field" style={{ marginTop: 8, display: 'block' }}>
-              <span>CPS mục tiêu</span>
-              <input type="number" min={1} max={60} step={1} value={targetCps} disabled={running} onChange={(event) => setTargetCps(Number(event.target.value) || 20)} />
-            </label>
-          )}
-          <div className="muted small">Khi bật, MP3 sẽ đi kèm file subtitle khớp voice-over.</div>
-
           {provider === 'capcut' && (
             <label className="field" style={{ marginTop: 12, display: 'block' }}>
               <span>Số luồng CapCut</span>
@@ -564,14 +525,6 @@ export default function TextToSpeech({
               <button className="link-btn" onClick={() => window.api.showItem(output)}>
                 {baseName(output)}
               </button>
-              {subtitleOutput && (
-                <>
-                  <div className="muted small" style={{ marginTop: 6 }}>Subtitle khớp voice-over:</div>
-                  <button className="link-btn" onClick={() => window.api.showItem(subtitleOutput)}>
-                    {baseName(subtitleOutput)}
-                  </button>
-                </>
-              )}
             </div>
           )}
 
