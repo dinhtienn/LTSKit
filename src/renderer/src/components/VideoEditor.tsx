@@ -22,6 +22,7 @@ const FONT_OPTIONS = [
   ['tahoma', 'Tahoma']
 ] as const
 const FONT_FAMILIES: Record<string, string> = Object.fromEntries(FONT_OPTIONS)
+type EditorPanel = 'audio' | 'subtitle' | 'text' | 'blur' | 'logo' | 'export'
 
 function hexAlpha(hex: string, opacity: number): string {
   const raw = hex.replace('#', '')
@@ -79,7 +80,9 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
     y0: 0,
     y1: 0
   })
-  const [activeOverlay, setActiveOverlay] = useState<'region' | 'logo'>('region')
+  const [panel, setPanel] = useState<EditorPanel>('subtitle')
+  const [showLayers, setShowLayers] = usePersistedState('ltskit.editor.showLayers', true)
+  const [showInspector, setShowInspector] = usePersistedState('ltskit.editor.showInspector', true)
   const [coChu, setCoChu] = usePersistedState('ltskit.ocr.cochu', 'auto')
   const [ghepMode, setGhepMode] = useState<'burn' | 'soft'>('burn')
   const [exportSpeed, setExportSpeed] = usePersistedState('ltskit.editor.exportSpeed', 'balanced')
@@ -270,7 +273,7 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
     setLogo('')
     setLogoAspect(1)
     setLogoRect({ x0: 0, x1: 0, y0: 0, y1: 0 })
-    setActiveOverlay('region')
+    setPanel('subtitle')
     setGhep('idle')
     setGhepOut('')
     setGhepLoi(null)
@@ -324,7 +327,7 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
         y1: top + height
       })
       setLogoEnabled(true)
-      setActiveOverlay('logo')
+      setPanel('logo')
       setGhepLoi(null)
     } catch (error) {
       if (request !== logoRequestRef.current) return
@@ -455,37 +458,80 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
   if (!unlocked) return <div className="card muted">Tính năng đang khoá.</div>
 
   return (
-    <div className="lam-viec">
-      <div className="cot-cauhinh">
-        <div className="cot-tieude">Cấu hình</div>
+    <div
+      className="lam-viec"
+      style={{
+        gridTemplateColumns: `${showLayers || !video ? '168px ' : ''}minmax(0, 1fr)${showInspector && video ? ' minmax(280px, 26%)' : ''}`
+      }}
+    >
+      {(showLayers || !video) && <div className="cot-cauhinh editor-layers">
+        <div className="cot-tieude">Video</div>
         <div className="card options-card">
           <button className="btn primary" onClick={chooseVideo} disabled={ghep === 'chay'}>
             🎞 Chọn video
           </button>
           {video && <div className="muted small ocr-ten">{baseName(video)}</div>}
         </div>
-        <div className="card options-card">
-          <label className="field">
-            <span className="muted small">Thư mục lưu kết quả</span>
-            <div className="gk-row">
-              <input value={outputDir} readOnly />
-              <button
-                className="btn"
-                onClick={async () => {
-                  const directory = await window.api.chooseFolder()
-                  if (directory) setOutputDir(directory)
-                }}
-              >
-                Chọn thư mục
+        {video && (
+          <>
+            <div className="cot-tieude">Lớp</div>
+            <div className={`blur-region-item ${panel === 'subtitle' ? 'active' : ''}`}>
+              <label className="gk-check">
+                <input type="checkbox" checked={subtitleEnabled} onChange={(event) => setSubtitleEnabled(event.target.checked)} />
+              </label>
+              <button type="button" className="link-btn" onClick={() => setPanel('subtitle')}>
+                <span>Phụ đề</span>
               </button>
             </div>
-          </label>
+            <div className={`blur-region-item ${panel === 'text' ? 'active' : ''}`}>
+              <label className="gk-check">
+                <input type="checkbox" checked={textEnabled} onChange={(event) => setTextEnabled(event.target.checked)} />
+              </label>
+              <button type="button" className="link-btn" onClick={() => setPanel('text')}>
+                <span>Text</span>
+              </button>
+              {textOverlays.length > 0 && <span className="layer-count">{textOverlays.length}</span>}
+            </div>
+            <div className={`blur-region-item ${panel === 'blur' ? 'active' : ''}`}>
+              <label className="gk-check">
+                <input type="checkbox" checked={blurEnabled} onChange={(event) => setBlurEnabled(event.target.checked)} />
+              </label>
+              <button type="button" className="link-btn" onClick={() => setPanel('blur')}>
+                <span>Làm mờ</span>
+              </button>
+              {blurRegions.length > 0 && <span className="layer-count">{blurRegions.length}</span>}
+            </div>
+            <div className={`blur-region-item ${panel === 'logo' ? 'active' : ''}`}>
+              <label className="gk-check">
+                <input type="checkbox" checked={logoEnabled} onChange={(event) => setLogoEnabled(event.target.checked)} />
+              </label>
+              <button type="button" className="link-btn" onClick={() => setPanel('logo')}>
+                <span>Logo</span>
+              </button>
+            </div>
+            <div className="cot-tieude">Cố định</div>
+            <div className={`blur-region-item ${panel === 'audio' ? 'active' : ''}`}>
+              <button type="button" className="link-btn" onClick={() => setPanel('audio')}>
+                Âm thanh
+              </button>
+            </div>
+            <div className={`blur-region-item ${panel === 'export' ? 'active' : ''}`}>
+              <button type="button" className="link-btn" onClick={() => setPanel('export')}>
+                Xuất video
+              </button>
+            </div>
+          </>
+        )}
+        <div className="layer-footer">
+          {ghep === 'chay' && <span className="cookie-status ok">Đang xuất... {ghepPct}%</span>}
         </div>
+      </div>}
+      {showInspector && video && <div className="cot-cauhinh editor-inspector">
         {video && (
           <div className="card options-card">
-            <div className="cot-tieude">Xuất video</div>
-            <div className="muted small">Chọn riêng từng thay đổi cần áp dụng rồi xuất tất cả trong một video.</div>
-            <div className="composer-section">
+            {panel === 'audio' && (
+              <>
+                <div className="composer-section">
               <b>Âm thanh gốc</b>
               <label className="volume-row">
                 <span>Âm lượng video</span>
@@ -562,12 +608,31 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                   </label>
                 </>
               )}
-            </div>
-            <div className="composer-section">
-              <label className="gk-check composer-head">
-                <input type="checkbox" checked={subtitleEnabled} onChange={(event) => setSubtitleEnabled(event.target.checked)} />
-                <b>Phụ đề</b>
-              </label>
+                </div>
+                <div className="composer-section">
+                  <label className="gk-check composer-head">
+                    <input type="checkbox" checked={voiceEnabled} onChange={(event) => setVoiceEnabled(event.target.checked)} />
+                    <b>Voice</b>
+                  </label>
+                  {voiceEnabled && (
+                    <>
+                      <button className="btn" onClick={chooseVoice}>
+                        🎙 Chọn file voice
+                      </button>
+                      {voice && <div className="muted small ocr-ten">{baseName(voice)}</div>}
+                      <label className="volume-row">
+                        <span>Âm lượng voice</span>
+                        <input type="range" min="0" max="100" step="1" value={voiceVolume} onChange={(event) => setVoiceVolume(Number(event.target.value))} />
+                        <span className="volume-value">{voiceVolume}%</span>
+                      </label>
+                    </>
+                  )}
+                </div>
+              </>
+            )}
+            {panel === 'subtitle' && (
+              <div className="composer-section">
+              <b>Phụ đề</b>
               {subtitleEnabled && (
                 <>
                   <button className="btn" onClick={chooseSrt}>
@@ -670,12 +735,11 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                   )}
                 </>
               )}
-            </div>
-            <div className="composer-section">
-              <label className="gk-check composer-head">
-                <input type="checkbox" checked={textEnabled} onChange={(event) => setTextEnabled(event.target.checked)} />
-                <b>Text</b>
-              </label>
+              </div>
+            )}
+            {panel === 'text' && (
+              <div className="composer-section">
+              <b>Text</b>
               {textEnabled && (
                 <>
                   <label className="field">
@@ -694,7 +758,14 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                   <div className="blur-region-list">
                     {textOverlays.map((item, index) => (
                       <div key={item.id} className={`blur-region-item ${activeTextId === item.id ? 'active' : ''}`}>
-                        <button type="button" className="link-btn" onClick={() => setActiveTextId(item.id)}>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => {
+                            setActiveTextId(item.id)
+                            setPanel('text')
+                          }}
+                        >
                           Text {index + 1}
                         </button>
                         <button type="button" className="link-btn danger-link" onClick={() => removeTextOverlay(item.id)}>
@@ -850,12 +921,11 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                   )}
                 </>
               )}
-            </div>
-            <div className="composer-section">
-              <label className="gk-check composer-head">
-                <input type="checkbox" checked={blurEnabled} onChange={(event) => setBlurEnabled(event.target.checked)} />
-                <b>Làm mờ</b>
-              </label>
+              </div>
+            )}
+            {panel === 'blur' && (
+              <div className="composer-section">
+              <b>Làm mờ</b>
               {blurEnabled && (
                 <>
                   <div className="muted small overlay-help">Có {blurRegions.length} vùng mờ.</div>
@@ -865,7 +935,14 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                   <div className="blur-region-list">
                     {blurRegions.map((item, index) => (
                       <div key={item.id} className={`blur-region-item ${activeBlurId === item.id ? 'active' : ''}`}>
-                        <button type="button" className="link-btn" onClick={() => setActiveBlurId(item.id)}>
+                        <button
+                          type="button"
+                          className="link-btn"
+                          onClick={() => {
+                            setActiveBlurId(item.id)
+                            setPanel('blur')
+                          }}
+                        >
                           Vùng mờ {index + 1}
                         </button>
                         {blurRegions.length > 1 && (
@@ -878,37 +955,35 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                   </div>
                 </>
               )}
-            </div>
-            <div className="composer-section">
-              <label className="gk-check composer-head">
-                <input type="checkbox" checked={voiceEnabled} onChange={(event) => setVoiceEnabled(event.target.checked)} />
-                <b>Voice</b>
-              </label>
-              {voiceEnabled && (
-                <>
-                  <button className="btn" onClick={chooseVoice}>
-                    🎙 Chọn file voice
-                  </button>
-                  {voice && <div className="muted small ocr-ten">{baseName(voice)}</div>}
-                  <label className="volume-row">
-                    <span>Âm lượng voice</span>
-                    <input type="range" min="0" max="100" step="1" value={voiceVolume} onChange={(event) => setVoiceVolume(Number(event.target.value))} />
-                    <span className="volume-value">{voiceVolume}%</span>
-                  </label>
-                </>
-              )}
-            </div>
-            <div className="composer-section">
-              <label className="gk-check composer-head">
-                <input type="checkbox" checked={logoEnabled} onChange={(event) => setLogoEnabled(event.target.checked)} />
-                <b>Logo</b>
-              </label>
+              </div>
+            )}
+            {panel === 'logo' && (
+              <div className="composer-section">
+              <b>Logo</b>
               <button className="btn" onClick={chooseLogo} disabled={!media}>
                 🖼 Chọn ảnh logo
               </button>
               {logo && <div className="muted small ocr-ten">{baseName(logo)}</div>}
-            </div>
-            <div className="composer-section">
+              </div>
+            )}
+            {panel === 'export' && (
+              <>
+                <label className="field">
+                  <span className="muted small">Thư mục lưu kết quả</span>
+                  <div className="gk-row">
+                    <input value={outputDir} readOnly />
+                    <button
+                      className="btn"
+                      onClick={async () => {
+                        const directory = await window.api.chooseFolder()
+                        if (directory) setOutputDir(directory)
+                      }}
+                    >
+                      Chọn thư mục
+                    </button>
+                  </div>
+                </label>
+                <div className="composer-section">
               <b>Tốc độ xuất</b>
               <label className="field">
                 <span className="muted small">Ưu tiên gì khi xuất video</span>
@@ -921,8 +996,8 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
               <div className="muted small">
                 Máy sẽ tự dùng GPU nếu được; xem tab Nhật ký để biết encoder nào đã chạy.
               </div>
-            </div>
-            <div className="cookie-actions">
+                </div>
+                <div className="cookie-actions">
               {ghep !== 'chay' ? (
                 <button className="btn primary" disabled={!canExport || !outputDir} onClick={exportVideo}>
                   🎬 Xuất video
@@ -935,49 +1010,49 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                   <span className="cookie-status ok">Đang xuất... {ghepPct}%</span>
                 </>
               )}
-            </div>
-            {ghep === 'chay' && (
+                </div>
+                {ghep === 'chay' && (
               <div className="bar" style={{ marginTop: 10, height: 8 }}>
                 <div className="bar-fill" style={{ width: `${ghepPct}%` }} />
               </div>
-            )}
-            {ghepLoi && <div className="dy-err small">{ghepLoi}</div>}
-            {ghep === 'xong' && (
+                )}
+                {ghepLoi && <div className="dy-err small">{ghepLoi}</div>}
+                {ghep === 'xong' && (
               <div className="muted small" style={{ marginTop: 8 }}>
                 ✅ Đã xuất ·{' '}
                 <button className="link-btn" onClick={() => window.api.showItem(ghepOut)}>
                   {baseName(ghepOut)}
                 </button>
               </div>
+                )}
+              </>
             )}
           </div>
         )}
-      </div>
-      <div className="cot-ketqua cot-video">
+      </div>}
+      <div className="cot-ketqua cot-video editor-preview">
         <div className="cot-tieude">Video &amp; vùng chữ</div>
+        <div className="overlay-selector" role="group" aria-label="Hiển thị cột editor">
+          <button
+            type="button"
+            className={`btn ${showLayers ? 'active' : ''}`}
+            aria-pressed={showLayers}
+            onClick={() => setShowLayers((current) => !current)}
+          >
+            Lớp
+          </button>
+          <button
+            type="button"
+            className={`btn ${showInspector ? 'active' : ''}`}
+            aria-pressed={showInspector}
+            onClick={() => setShowInspector((current) => !current)}
+          >
+            Cấu hình
+          </button>
+        </div>
         {video && media ? (
           <>
             <div className="muted small">Kéo hoặc dùng phím mũi tên để di chuyển; giữ Shift để đi nhanh hơn. Chọn lớp cần sửa bằng các nút bên dưới.</div>
-            <div className="overlay-selector" role="group" aria-label="Chọn lớp phủ cần chỉnh sửa">
-              <button
-                type="button"
-                className={`btn ${activeOverlay === 'region' ? 'active' : ''}`}
-                aria-pressed={activeOverlay === 'region'}
-                disabled={!subtitleEnabled || ghepMode !== 'burn'}
-                onClick={() => setActiveOverlay('region')}
-              >
-                Phụ đề
-              </button>
-              <button
-                type="button"
-                className={`btn ${activeOverlay === 'logo' ? 'active' : ''}`}
-                aria-pressed={activeOverlay === 'logo'}
-                disabled={!logoEnabled || !logo}
-                onClick={() => setActiveOverlay('logo')}
-              >
-                Logo
-              </button>
-            </div>
             <VideoStage
               path={video}
               media={media}
@@ -1034,7 +1109,10 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                         previewBlur
                         showMask={activeBlurId === item.id}
                         active={activeBlurId === item.id}
-                        onActivate={() => setActiveBlurId(item.id)}
+                        onActivate={() => {
+                          setActiveBlurId(item.id)
+                          setPanel('blur')
+                        }}
                         label={`Vùng mờ ${index + 1}`}
                       />
                     ))}
@@ -1048,8 +1126,8 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                       videoH={media.height}
                       boxW={boxW}
                       boxH={boxH}
-                      active={activeOverlay === 'logo'}
-                      onActivate={() => setActiveOverlay('logo')}
+                       active={panel === 'logo'}
+                       onActivate={() => setPanel('logo')}
                     />
                   )}
                   {textEnabled &&
@@ -1063,7 +1141,10 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                         boxW={boxW}
                         boxH={boxH}
                         active={activeTextId === item.id}
-                        onActivate={() => setActiveTextId(item.id)}
+                         onActivate={() => {
+                           setActiveTextId(item.id)
+                           setPanel('text')
+                         }}
                         visible={textOverlayVisible(item, currentTime)}
                         fontFamily={FONT_FAMILIES[textFontId] ?? 'Arial'}
                       />
@@ -1103,8 +1184,8 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
                         boxW={boxW}
                         boxH={boxH}
                         showMask={false}
-                        active={activeOverlay === 'region'}
-                        onActivate={() => setActiveOverlay('region')}
+                         active={panel === 'subtitle'}
+                         onActivate={() => setPanel('subtitle')}
                         label="Vùng đặt phụ đề"
                         cornerHandles
                       />

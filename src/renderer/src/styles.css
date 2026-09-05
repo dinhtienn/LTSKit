@@ -964,6 +964,15 @@ select {
 .blur-region-list { display: grid; gap: 4px; margin-top: 8px; }
 .blur-region-item { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; }
 .blur-region-item.active { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.editor-layers { gap: 10px; }
+.editor-inspector { gap: 14px; }
+.lam-viec > .editor-layers { order: 1; }
+.lam-viec > .editor-preview { order: 2; }
+.lam-viec > .editor-inspector { order: 3; }
+.editor-layers .blur-region-item { gap: 6px; }
+.editor-layers .link-btn { min-width: 0; overflow: hidden; text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.layer-count { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.layer-footer { margin-top: auto; min-height: 20px; }
 .danger-link { color: #f87171; }
 .rbox-lop.overlay-active,
 .logo-box.overlay-active {
