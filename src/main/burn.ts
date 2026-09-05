@@ -13,6 +13,7 @@ import {
   validateBurnRequest,
   validateAndDecodeComposerAssets
 } from './videoComposer'
+import { buildAudioPlan } from './audioPlan'
 import { buildDuckingVolumeExpression, mergeDuckingWindows, parseSrtDuckingWindows } from './audioDucking'
 import { videoEncoderCandidates, type VideoEncoderCandidate } from './videoEncoders'
 import {
@@ -566,7 +567,8 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       await writeFile(assTam, taoAss(cues, meta, bc, textOverlays, textFontFamily, req.subtitleStyle), 'utf8')
     }
 
-    const plan = buildComposerPlan(composerReq, probe, 'sub.ass', duckingExpression)
+    const audioPlan = buildAudioPlan(composerReq, probe, duckingExpression)
+    const plan = buildComposerPlan(composerReq, probe, audioPlan, 'sub.ass')
     const inputArgs: string[] = ['-i', req.video]
     for (const [index, input] of plan.inputs.entries()) {
       if (req.logo && index === 0) inputArgs.push('-loop', '1')

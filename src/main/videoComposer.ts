@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { dirname, extname, join } from 'node:path'
 import { resolveFfmpeg } from './deps'
 import type { BlurRegion, BurnReq, LogoDimensions, MediaProbe, VideoRect } from '../shared/types'
+import type { AudioPlan } from './audioPlan'
 import { exportBlurFilter } from '../shared/videoBlur'
 import { displayDimensions } from '../shared/videoOrientation'
 
@@ -317,7 +318,7 @@ const evenCoordinate = (value: number): number => Math.max(0, Math.floor(value /
 const evenDimension = (value: number): number => Math.max(2, Math.floor(value / 2) * 2)
 const volume = (percent: number): string => Number((percent / 100).toFixed(2)).toString()
 
-export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: string, duckingExpression?: string): ComposerPlan {
+export function buildComposerPlan(req: BurnReq, meta: MediaProbe, audioPlan: AudioPlan, assName?: string): ComposerPlan {
   const inputs: string[] = []
   const addInput = (path: string): number => {
     inputs.push(path)
@@ -325,7 +326,9 @@ export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: stri
   }
 
   const logoInput = req.logo ? addInput(req.logo.path) : null
-  const voiceInput = req.voice ? addInput(req.voice) : null
+  const narration = audioPlan.assets.find((asset) => asset.role === 'narration') ?? null
+  const source = audioPlan.assets.find((asset) => asset.role === 'source') ?? null
+  const voiceInput = narration && narration.input !== 'video' ? addInput(narration.input) : null
   const softSubtitleInput = req.srt && req.mode === 'soft' ? addInput(req.srt) : null
   const filters: string[] = []
   let videoLabel = '0:v'
@@ -374,27 +377,31 @@ export function buildComposerPlan(req: BurnReq, meta: MediaProbe, assName?: stri
   const changesPixels = videoStep > 0 || hasBurnAss
   if (changesPixels && videoLabel !== 'vout') filters.push(`[${videoLabel}]null[vout]`)
 
-  const changesAudio = voiceInput !== null || req.videoVolume !== 100
+  const sourceChanged = source !== null && (source.volume !== 100 || !!source.duckingExpression)
+  const changesAudio = voiceInput !== null || sourceChanged
   let audioMap = '0:a?'
-  if (voiceInput !== null) {
-    if (meta.hasAudio) {
+  if (voiceInput !== null && narration !== null) {
+    if (source !== null) {
       // `eval=frame` la bat buoc: mac dinh filter volume chi tinh bieu thuc mot
       // lan nen gain se dung yen thay vi bam theo tung cue voice-over.
-      const sourceGain = duckingExpression
-        ? `'${duckingExpression}':eval=frame`
-        : volume(req.videoVolume)
+      const sourceGain = source.duckingExpression
+        ? `'${source.duckingExpression}':eval=frame`
+        : volume(source.volume)
       filters.push(
         `[0:a]volume=${sourceGain}[a0]`,
-        `[${voiceInput}:a]volume=${volume(req.voiceVolume)}[a1]`,
+        `[${voiceInput}:a]volume=${volume(narration.volume)}[a1]`,
         '[a0][a1]amix=inputs=2:duration=first:dropout_transition=0:normalize=0[aout]'
       )
       audioMap = '[aout]'
     } else {
-      filters.push(`[${voiceInput}:a]volume=${volume(req.voiceVolume)}[aout]`, '[aout]apad[aoutp]')
+      filters.push(`[${voiceInput}:a]volume=${volume(narration.volume)}[aout]`, '[aout]apad[aoutp]')
       audioMap = '[aoutp]'
     }
-  } else if (changesAudio && meta.hasAudio) {
-    filters.push(`[0:a]volume=${volume(req.videoVolume)}[aout]`)
+  } else if (sourceChanged && source !== null) {
+    const sourceGain = source.duckingExpression
+      ? `'${source.duckingExpression}':eval=frame`
+      : volume(source.volume)
+    filters.push(`[0:a]volume=${sourceGain}[aout]`)
     audioMap = '[aout]'
   }
 
