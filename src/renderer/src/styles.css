@@ -985,6 +985,8 @@ select {
 .translation-style-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .translation-style-form { display: flex; flex-direction: column; gap: 7px; padding-top: 8px; }
 .translation-style-form input, .translation-style-form textarea { width: 100%; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); padding: 7px; font: inherit; }
+.cache-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; margin-top: 10px; }
+.cache-total { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--border); }
 .danger-link { color: #f87171; }
 .rbox-lop.overlay-active,
 .logo-box.overlay-active {

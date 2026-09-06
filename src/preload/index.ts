@@ -26,6 +26,8 @@ import {
   GeminiReadiness,
   GeminiTranslationResult,
   TranslationStyleSnapshot,
+  CacheNamespace,
+  CacheUsage,
   LogEntry,
   LogoDimensions,
   MediaProbe,
@@ -310,8 +312,8 @@ const api = {
   openLogFile: (): Promise<void> => ipcRenderer.invoke('logs:openFile'),
 
   // ---- Cache ket qua job ----
-  cacheUsage: (): Promise<number> => ipcRenderer.invoke('cache:usage'),
-  clearCache: (): Promise<void> => ipcRenderer.invoke('cache:clear'),
+  cacheUsage: (): Promise<CacheUsage> => ipcRenderer.invoke('cache:usage'),
+  clearCache: (namespace?: CacheNamespace): Promise<void> => ipcRenderer.invoke('cache:clear', namespace),
   onLog: (cb: (e: LogEntry) => void): (() => void) => {
     const listener = (_e: unknown, entry: LogEntry): void => cb(entry)
     ipcRenderer.on('logs:entry', listener)

@@ -75,7 +75,7 @@ import {
   clearDyCookies,
   dyCookieStatus
 } from './douyinCookies'
-import { CapcutSrtRequest, DouyinRequest, EditableSubtitleCue, OptimizeSrtRequest, TranslationStyleSnapshot, VieneuSrtRequest, WhisperRequest } from '../shared/types'
+import { CacheNamespace, CapcutSrtRequest, DouyinRequest, EditableSubtitleCue, OptimizeSrtRequest, TranslationStyleSnapshot, VieneuSrtRequest, WhisperRequest } from '../shared/types'
 import {
   clearLogs,
   debugRaw,
@@ -593,10 +593,18 @@ function registerIpc(): void {
   })
 
   // Cache ket qua job (Audio->Text)
-  ipcMain.handle('cache:usage', async () => cacheUsageBytes(jobCacheRoot()))
-  ipcMain.handle('cache:clear', async () => {
-    await clearJobCache(jobCacheRoot())
-    logInfo('Đã xóa kết quả đã lưu.')
+  ipcMain.handle('cache:usage', async () => {
+    const root = jobCacheRoot()
+    const [whisper, ocr, translation] = await Promise.all([
+      cacheUsageBytes(root, 'whisper'),
+      cacheUsageBytes(root, 'ocr'),
+      cacheUsageBytes(root, 'translation')
+    ])
+    return { whisper, ocr, translation, total: whisper + ocr + translation }
+  })
+  ipcMain.handle('cache:clear', async (_event, namespace?: CacheNamespace) => {
+    await clearJobCache(jobCacheRoot(), namespace)
+    logInfo(namespace ? `Đã xóa cache ${namespace}.` : 'Đã xóa kết quả đã lưu.')
   })
 
   // Tai xuong

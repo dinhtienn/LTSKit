@@ -499,6 +499,15 @@ export interface TranslationStyleSnapshot {
   instruction: string
 }
 
+export type CacheNamespace = 'whisper' | 'ocr' | 'translation'
+
+export interface CacheUsage {
+  whisper: number
+  ocr: number
+  translation: number
+  total: number
+}
+
 export type GeminiModelDiscovery = { ok: true; models: string[] } | { ok: false; error: string }
 
 export interface GeminiTranslationResult {

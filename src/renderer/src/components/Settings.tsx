@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import type { CookieProfile } from '../../../shared/types'
+import type { CacheNamespace, CacheUsage, CookieProfile } from '../../../shared/types'
 import type { GeminiKeyDescriptor } from '../../../shared/types'
 import GeminiHelp from './GeminiHelp'
 import { loadSharedProxy } from '../lib/downloadConnection'
@@ -51,8 +51,9 @@ export default function Settings(): JSX.Element {
   const [ytVer, setYtVer] = useState<string | null>(null)
   const [toolBusy, setToolBusy] = useState(false)
   const [toolMsg, setToolMsg] = useState<string | null>(null)
-  const [cacheBytes, setCacheBytes] = useState<number | null>(null)
-  const [cacheBusy, setCacheBusy] = useState(false)
+  const [cacheUsage, setCacheUsage] = useState<CacheUsage | null>(null)
+  const [clearingCache, setClearingCache] = useState<CacheNamespace | 'all' | null>(null)
+  const [cacheError, setCacheError] = useState<string | null>(null)
 
   const refreshProfiles = (): void => { void window.api.cookieProfiles().then(setProfiles) }
 
@@ -61,14 +62,29 @@ export default function Settings(): JSX.Element {
     void window.api.geminiModels().then(setPool)
     refreshProfiles()
     void window.api.ytdlpVersion().then(setYtVer)
-    void window.api.cacheUsage().then(setCacheBytes)
+    void refreshCacheUsage()
   }, [])
 
-  const clearCache = async (): Promise<void> => {
-    setCacheBusy(true)
-    await window.api.clearCache()
-    setCacheBytes(await window.api.cacheUsage())
-    setCacheBusy(false)
+  const refreshCacheUsage = async (): Promise<void> => {
+    try {
+      setCacheUsage(await window.api.cacheUsage())
+      setCacheError(null)
+    } catch {
+      setCacheError('Không đọc được dung lượng cache.')
+    }
+  }
+
+  const clearCache = async (namespace?: CacheNamespace): Promise<void> => {
+    setClearingCache(namespace ?? 'all')
+    setCacheError(null)
+    try {
+      await window.api.clearCache(namespace)
+      await refreshCacheUsage()
+    } catch {
+      setCacheError('Không xóa được kết quả đã lưu.')
+    } finally {
+      setClearingCache(null)
+    }
   }
 
 
@@ -292,15 +308,33 @@ export default function Settings(): JSX.Element {
         <div className="card settings-card"><div className="cookie-title">yt-dlp</div><div className="muted small">Phiên bản: <b>{ytVer || '…'}</b> · tự cập nhật hằng ngày</div><div className="cookie-actions"><button className="btn" onClick={updateTool} disabled={toolBusy}>{toolBusy ? 'Đang cập nhật…' : '⟳ Cập nhật công cụ'}</button></div>{toolMsg && <div className="muted small">{toolMsg}</div>}</div>
         <div className="card settings-card">
           <div className="cookie-title">Kết quả đã lưu</div>
-          <div className="muted small">
-            Phụ đề từ Audio→Text, Dịch màn hình và bản dịch Gemini được giữ lại để chạy lại cùng một
-            việc không phải làm lại từ đầu. Đang dùng <b>{cacheBytes == null ? '…' : readableSize(cacheBytes)}</b>.
+          <div className="muted small">Cache giúp không phải chạy lại các tác vụ nặng khi input và cấu hình không đổi.</div>
+          {([
+            ['whisper', 'Audio → Text (Whisper)'],
+            ['ocr', 'Dịch màn hình (OCR)'],
+            ['translation', 'Bản dịch Gemini']
+          ] as Array<[CacheNamespace, string]>).map(([namespace, label]) => {
+            const bytes = cacheUsage?.[namespace] ?? 0
+            const busy = clearingCache === namespace || clearingCache === 'all'
+            return (
+              <div className="cache-row" key={namespace}>
+                <span>{label}</span>
+                <span className="muted small">{cacheUsage == null ? '…' : readableSize(bytes)}</span>
+                <button className="btn" onClick={() => void clearCache(namespace)} disabled={busy || bytes === 0}>
+                  {clearingCache === namespace ? 'Đang xóa…' : 'Xóa'}
+                </button>
+              </div>
+            )
+          })}
+          <div className="cache-total muted small">
+            Tổng cộng: <b>{cacheUsage == null ? '…' : readableSize(cacheUsage.total)}</b>
           </div>
           <div className="cookie-actions">
-            <button className="btn" onClick={clearCache} disabled={cacheBusy || cacheBytes === 0}>
-              {cacheBusy ? 'Đang xóa…' : '🗑 Xóa kết quả đã lưu'}
+            <button className="btn" onClick={() => void clearCache()} disabled={clearingCache !== null || !cacheUsage?.total}>
+              {clearingCache === 'all' ? 'Đang xóa…' : '🗑 Xóa tất cả'}
             </button>
           </div>
+          {cacheError && <div className="dy-err small">{cacheError}</div>}
         </div>
       </>}
 
