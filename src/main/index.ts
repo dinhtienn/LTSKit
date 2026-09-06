@@ -75,7 +75,7 @@ import {
   clearDyCookies,
   dyCookieStatus
 } from './douyinCookies'
-import { CapcutSrtRequest, DouyinRequest, EditableSubtitleCue, OptimizeSrtRequest, VieneuSrtRequest, WhisperRequest } from '../shared/types'
+import { CapcutSrtRequest, DouyinRequest, EditableSubtitleCue, OptimizeSrtRequest, TranslationStyleSnapshot, VieneuSrtRequest, WhisperRequest } from '../shared/types'
 import {
   clearLogs,
   debugRaw,
@@ -505,8 +505,8 @@ function registerIpc(): void {
   ipcMain.handle('gemini:readiness', async () => geminiReadiness())
   ipcMain.handle(
     'gemini:translateSrt',
-    async (event, jobId: string, srtPath: string, outPath: string, dich: string) =>
-      translateSrt(srtPath, outPath, dich, (d, t) =>
+    async (event, jobId: string, srtPath: string, outPath: string, dich: string, style: TranslationStyleSnapshot) =>
+      translateSrt(srtPath, outPath, dich, style, (d, t) =>
         event.sender.send('gemini:progress', { jobId, done: d, total: t }), undefined, jobId
       )
   )

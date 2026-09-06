@@ -25,6 +25,7 @@ import {
   GeminiModelDiscovery,
   GeminiReadiness,
   GeminiTranslationResult,
+  TranslationStyleSnapshot,
   LogEntry,
   LogoDimensions,
   MediaProbe,
@@ -231,9 +232,10 @@ const api = {
     jobId: string,
     srtPath: string,
     outPath: string,
-    dich: string
+    dich: string,
+    style: TranslationStyleSnapshot
   ): Promise<GeminiTranslationResult> =>
-    ipcRenderer.invoke('gemini:translateSrt', jobId, srtPath, outPath, dich),
+    ipcRenderer.invoke('gemini:translateSrt', jobId, srtPath, outPath, dich, style),
   onGeminiProgress: (cb: (p: GeminiProgress) => void): (() => void) => {
     const listener = (_e: unknown, p: GeminiProgress): void => cb(p)
     ipcRenderer.on('gemini:progress', listener)

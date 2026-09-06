@@ -1,5 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
+import { usePersistedState } from './lib/persist'
 import {
   loadOutputDirectories,
   saveOutputDirectory,
@@ -15,7 +16,8 @@ import TextToSpeech from './components/TextToSpeech'
 import License from './components/License'
 import Logs from './components/Logs'
 import Settings from './components/Settings'
-import type { UpdateStatus } from '../../shared/types'
+import type { TranslationStyle, UpdateStatus } from '../../shared/types'
+import { sanitizeCustomTranslationStyles } from './lib/translationStyles'
 
 type Stage = 'checking' | 'setup' | 'ready'
 type TabKey = 'download' | 'audiotext' | 'screen' | 'editor' | 'tts' | 'settings' | 'logs' | 'license'
@@ -111,6 +113,11 @@ export default function App(): JSX.Element {
   })
   // "Hop thu" gui file tu tab Tai xuong sang tab Audio->Text (nut "Lay sub")
   const [subInbox, setSubInbox] = useState<{ path: string; id: string } | null>(null)
+  const [customTranslationStyles, setCustomTranslationStyles] = usePersistedState<TranslationStyle[]>(
+    'ltskit.translation.customStyles',
+    []
+  )
+  const customStyles = sanitizeCustomTranslationStyles(customTranslationStyles)
 
   const sendToSub = (filePath: string): void => {
     setSubInbox({ path: filePath, id: crypto.randomUUID() })
@@ -236,6 +243,8 @@ export default function App(): JSX.Element {
               subInbox={subInbox}
               active={tab === 'audiotext'}
               onOpenSettings={openSettings}
+              customStyles={customStyles}
+              setCustomStyles={setCustomTranslationStyles}
             />
           </div>
           {/* GIU SONG (khong unmount): user chon video + keo khung xong ma qua
@@ -247,6 +256,8 @@ export default function App(): JSX.Element {
               setOutputDir={(directory) => updateOutputDir('screen', directory)}
               active={tab === 'screen'}
               onOpenSettings={openSettings}
+              customStyles={customStyles}
+              setCustomStyles={setCustomTranslationStyles}
             />
           </div>
           <div className={`tab-pane ${tab === 'editor' ? '' : 'hidden'}`}>

@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { stat } from 'node:fs/promises'
-import type { WhisperRequest } from '../shared/types'
+import type { TranslationStyleSnapshot, WhisperRequest } from '../shared/types'
 
 /**
  * Khoa nhan dang mot job da chay. Doi khoa = phai chay lai; giu khoa = dung lai
@@ -84,12 +84,14 @@ export async function ocrJobKey(
 export async function translationJobKey(
   srtPath: string,
   targetLanguage: string,
-  models: string[]
+  models: string[],
+  style: TranslationStyleSnapshot
 ): Promise<string> {
   return jobKey('translation', {
     input: await inputFingerprint(srtPath),
     targetLanguage,
     models: [...new Set(models)].sort(),
-    promptVersion: TRANSLATION_PROMPT_VERSION
+    promptVersion: TRANSLATION_PROMPT_VERSION,
+    style: { id: style.id, name: style.name, instruction: style.instruction }
   })
 }

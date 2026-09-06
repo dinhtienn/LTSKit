@@ -486,6 +486,19 @@ export interface GeminiReadiness {
   hasModels: boolean
 }
 
+export interface TranslationStyle {
+  id: string
+  name: string
+  instruction: string
+  builtIn: boolean
+}
+
+export interface TranslationStyleSnapshot {
+  id: string
+  name: string
+  instruction: string
+}
+
 export type GeminiModelDiscovery = { ok: true; models: string[] } | { ok: false; error: string }
 
 export interface GeminiTranslationResult {

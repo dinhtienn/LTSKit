@@ -1,10 +1,11 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { MediaProbe, VideoRect } from '../../../shared/types'
+import type { MediaProbe, TranslationStyle, VideoRect } from '../../../shared/types'
 import { hasFeature } from '../lib/license'
 import { defaultOcrRegion, formatOcrRegionForNotebook } from '../lib/ocrRegionGeometry'
 import { usePersistedState } from '../lib/persist'
 import { translationOutputPath } from '../lib/translationOutputPath'
+import { resolveTranslationStyle } from '../lib/translationStyles'
 import RegionBox from './RegionBox'
 import TranslationControl from './TranslationControl'
 import VideoStage from './VideoStage'
@@ -27,12 +28,16 @@ export default function ScreenText({
   outputDir,
   setOutputDir,
   active,
-  onOpenSettings
+  onOpenSettings,
+  customStyles,
+  setCustomStyles
 }: {
   outputDir: string
   setOutputDir: (directory: string) => void
   active: boolean
   onOpenSettings: () => void
+  customStyles: TranslationStyle[]
+  setCustomStyles: (styles: TranslationStyle[]) => void
 }): JSX.Element {
   const [video, setVideo] = useState<string | null>(null)
   const [media, setMedia] = useState<MediaProbe | null>(null)
@@ -44,6 +49,7 @@ export default function ScreenText({
     storedDich != null && storedDich !== 'none'
   )
   const translationTarget = translationEnabled ? dich : 'none'
+  const [translationStyleId, setTranslationStyleId] = usePersistedState('ltskit.ocr.translationStyle', 'natural')
   const [buoc, setBuoc] = useState<Buoc>('idle')
   const [pct, setPct] = useState(0)
   const [dongChu, setDongChu] = useState('')
@@ -173,7 +179,7 @@ export default function ScreenText({
       if (translationTarget !== 'none') {
         setBuoc('dich')
         const translated = translationOutputPath(result.output!, outputDir, translationTarget)
-        const translation = await window.api.geminiTranslateSrt(`screen-text-${crypto.randomUUID()}`, result.output!, translated, translationTarget)
+        const translation = await window.api.geminiTranslateSrt(`screen-text-${crypto.randomUUID()}`, result.output!, translated, translationTarget, resolveTranslationStyle(translationStyleId, customStyles))
         if (!translation.ok || !translation.output) {
           setLoi(`Dịch: ${translation.error}`)
           setBuoc('loi')
@@ -220,7 +226,7 @@ export default function ScreenText({
         <div className="card options-card"><button className="btn primary" onClick={chonVideo} disabled={dangChay}>🎞 Chọn video</button>{video && <div className="muted small ocr-ten">{baseName(video)}</div>}<div className="muted small">Dành cho video chỉ có chữ chạy, không có tiếng.</div></div>
         <div className="card options-card"><button className="btn small" onClick={caiCongCu} disabled={dangChay || installing}>{installing ? `Đang cài lại… ${installPct}%` : 'Cài lại công cụ OCR'}</button>{installErr && <div className="dy-err small">{installErr}</div>}</div>
         <div className="card options-card"><label className="field"><span className="muted small">Thư mục lưu kết quả</span><div className="gk-row"><input value={outputDir} readOnly /><button className="btn" onClick={async () => { const directory = await window.api.chooseFolder(); if (directory) setOutputDir(directory) }}>Chọn thư mục</button></div></label></div>
-        <TranslationControl enabled={translationEnabled} setEnabled={setTranslationEnabled} language={dich} setLanguage={setDich} active={active} onOpenSettings={onOpenSettings} />
+        <TranslationControl enabled={translationEnabled} setEnabled={setTranslationEnabled} language={dich} setLanguage={setDich} styleId={translationStyleId} setStyleId={setTranslationStyleId} customStyles={customStyles} setCustomStyles={setCustomStyles} active={active} onOpenSettings={onOpenSettings} />
         {video && <div className="card"><div className="cookie-actions">{!dangChay && <button className="btn primary" disabled={!outputDir || !media} onClick={chay}>▶ Bắt đầu đọc chữ</button>}{buoc === 'doc' && <button className="btn danger" onClick={dung} disabled={dangDung}>{dangDung ? 'Đang dừng…' : '■ Dừng'}</button>}{buoc === 'doc' && <span className="cookie-status ok">Đang đọc… {pct}%</span>}{buoc === 'dich' && <span className="cookie-status ok">✨ Đang dịch…</span>}</div>{dangChay && <><div className="bar" style={{ marginTop: 10, height: 8 }}><div className="bar-fill" style={{ width: `${buoc === 'dich' ? 100 : pct}%` }} /></div>{dongChu && <div className="muted small ocr-dong">{dongChu}</div>}</>}{loi && <div className="dy-err small">{loi}</div>}{canhBaoDich && <div className="qwarn small">{canhBaoDich}</div>}{buoc === 'xong' && <div className="muted small" style={{ marginTop: 8 }}>✅ Xong · {ketQua.map((output) => <button key={output} className="link-btn" onClick={() => window.api.showItem(output)}>{baseName(output)}</button>)}</div>}</div>}
       </div>
       <div className="cot-ketqua cot-video">

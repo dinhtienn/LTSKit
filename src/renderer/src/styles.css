@@ -980,6 +980,11 @@ select {
 .subtitle-editor-table th { color: var(--muted); font-size: 11px; font-weight: 600; white-space: nowrap; }
 .subtitle-editor-table input, .subtitle-editor-table textarea { width: 100%; min-width: 120px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); padding: 6px; font: inherit; }
 .subtitle-editor-table textarea { min-width: 220px; resize: vertical; }
+.translation-style { margin-top: 10px; }
+.translation-style-manager { display: flex; flex-direction: column; gap: 7px; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--border); }
+.translation-style-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.translation-style-form { display: flex; flex-direction: column; gap: 7px; padding-top: 8px; }
+.translation-style-form input, .translation-style-form textarea { width: 100%; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); padding: 7px; font: inherit; }
 .danger-link { color: #f87171; }
 .rbox-lop.overlay-active,
 .logo-box.overlay-active {

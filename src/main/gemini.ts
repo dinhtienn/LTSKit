@@ -5,7 +5,8 @@ import {
   DICH_LANGS,
   type GeminiStatus,
   type GeminiTranslationResult,
-  type SrtBlock
+  type SrtBlock,
+  type TranslationStyleSnapshot
 } from '../shared/types'
 import { firstKey, getKey, hasKey, listKeys, loadKey, saveKey } from './geminiStore'
 import { advanceModelCursor, orderedPool } from './geminiModels'
@@ -197,7 +198,7 @@ const KIEM_NGON_NGU_SCHEMA = {
   required: ['valid']
 }
 
-function huongDan(ma: string, thuLai = false): string {
+function huongDan(ma: string, style: TranslationStyleSnapshot, thuLai = false): string {
   // Nhan vao la MA ngon ngu (dung dat ten file). Doi sang TEN de bao cho AI.
   const ten = DICH_LANGS.find((l) => l.code === ma)?.label ?? ma
   return [
@@ -215,8 +216,11 @@ function huongDan(ma: string, thuLai = false): string {
     '6. Dịch đầy đủ, sát nghĩa, tự nhiên, đúng văn phong gốc. Không tóm tắt, thêm bớt hoặc giải thích.',
     '7. Trước khi trả JSON, rà lại từng trường t. Nếu còn bất kỳ nội dung tiếng Trung nào,',
     '   phải dịch hết sang ngôn ngữ đích rồi mới trả kết quả.',
+    `8. Văn phong được chọn: ${style.name}`,
+    `Yêu cầu văn phong: ${style.instruction}`,
+    'Nếu yêu cầu văn phong mâu thuẫn với các yêu cầu bắt buộc về cấu trúc, số dòng hoặc dữ kiện, phải ưu tiên yêu cầu bắt buộc.',
     ...(thuLai
-      ? ['8. Bản trước còn sót nội dung nguồn. Hãy dịch lại toàn bộ và tuyệt đối không để lại bất kỳ chữ tiếng Trung nào.']
+      ? ['9. Bản trước còn sót nội dung nguồn. Hãy dịch lại toàn bộ và tuyệt đối không để lại bất kỳ chữ tiếng Trung nào.']
       : [])
   ].join('\n')
 }
@@ -274,15 +278,16 @@ type ChunkResult =
 async function processChunk(
   blocks: SrtBlock[],
   dich: string,
+  style: TranslationStyleSnapshot,
   call: GeminiGenerate,
   onDone: (count: number) => void
 ): Promise<ChunkResult> {
   const split = async (): Promise<ChunkResult> => {
     if (blocks.length === 1) return { ok: false, error: 'Gemini hết giờ khi xử lý một câu phụ đề.' }
     const mid = Math.floor(blocks.length / 2)
-    const left = await processChunk(blocks.slice(0, mid), dich, call, onDone)
+    const left = await processChunk(blocks.slice(0, mid), dich, style, call, onDone)
     if (!left.ok) return left
-    const right = await processChunk(blocks.slice(mid), dich, call, onDone)
+    const right = await processChunk(blocks.slice(mid), dich, style, call, onDone)
     if (!right.ok) return right
     return { ok: true, blocks: [...left.blocks, ...right.blocks], verified: left.verified && right.verified }
   }
@@ -290,7 +295,7 @@ async function processChunk(
   const payload = blocks.map((b, j) => `${j + 1}. ${b.text}`).join('\n')
   let candidate: SrtBlock[] = blocks.map((b) => ({ ...b }))
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const translated = await call(huongDan(dich, attempt > 1), payload, SCHEMA)
+    const translated = await call(huongDan(dich, style, attempt > 1), payload, SCHEMA)
     if (!translated.ok) return translated.timeout ? split() : { ok: false, error: errLabel(translated.err) }
 
     let arr: { n: number; t: string }[]
@@ -341,6 +346,7 @@ export async function translateSrt(
   srtPath: string,
   outPath: string,
   dich: string,
+  style: TranslationStyleSnapshot,
   onProgress?: (done: number, total: number) => void,
   generate?: GeminiGenerate,
   jobId = `translation-${Date.now()}-${Math.random()}`
@@ -355,7 +361,7 @@ export async function translateSrt(
   // khong the mo ta bang khoa, nen hai generate khac nhau se doc cua nhau.
   const cacheable = !generate
   const cacheKey = cacheable
-    ? await translationJobKey(srtPath, dich, await orderedPool()).catch(() => null)
+    ? await translationJobKey(srtPath, dich, await orderedPool(), style).catch(() => null)
     : null
   if (cacheKey) {
     const cached = await readCachedOutputs(
@@ -395,7 +401,7 @@ export async function translateSrt(
   let done = 0
   try {
     for (const chunk of chunks) {
-      const result = await processChunk(chunk, dich, call, (count) => {
+      const result = await processChunk(chunk, dich, style, call, (count) => {
         done += count
         onProgress?.(done, blocks.length)
       })

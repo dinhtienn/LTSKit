@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useRef, useState } from 'react'
-import type { GpuInfo, OptimizeSrtResult, SubtitlePurpose, WhisperRequest } from '../../../shared/types'
+import type { GpuInfo, OptimizeSrtResult, SubtitlePurpose, TranslationStyle, WhisperRequest } from '../../../shared/types'
+import { resolveTranslationStyle } from '../lib/translationStyles'
 import { usePersistedState } from '../lib/persist'
 import { hasFeature } from '../lib/license'
 import { useQueueRunner } from '../lib/useQueueRunner'
@@ -57,13 +58,17 @@ export default function AudioText({
   setOutputDir,
   subInbox,
   active,
-  onOpenSettings
+  onOpenSettings,
+  customStyles,
+  setCustomStyles
 }: {
   outputDir: string
   setOutputDir: (d: string) => void
   subInbox: { path: string; id: string } | null
   active: boolean
   onOpenSettings: () => void
+  customStyles: TranslationStyle[]
+  setCustomStyles: (styles: TranslationStyle[]) => void
 }): JSX.Element {
   const [hasEngine, setHasEngine] = useState<boolean | null>(null)
   const [installing, setInstalling] = useState(false)
@@ -97,6 +102,7 @@ export default function AudioText({
   )
   const translationTarget = translationEnabled ? dich : 'none'
   const [dichErr, setDichErr] = useState<string | null>(null)
+  const [translationStyleId, setTranslationStyleId] = usePersistedState('ltskit.wh.translationStyle', 'natural')
   const [editingPath, setEditingPath] = useState<string | null>(null)
   const [savedOutput, setSavedOutput] = useState<string | null>(null)
 
@@ -118,7 +124,7 @@ export default function AudioText({
     if (translationTarget !== 'none') {
       setItems((current) => current.map((item) => item.id === it.id ? { ...item, status: 'translating' } : item))
       const translatedPath = translationOutputPath(sourceSrt, outputDir, translationTarget)
-      const translation = await window.api.geminiTranslateSrt(it.id, sourceSrt, translatedPath, translationTarget)
+      const translation = await window.api.geminiTranslateSrt(it.id, sourceSrt, translatedPath, translationTarget, resolveTranslationStyle(translationStyleId, customStyles))
       if (!translation.ok || !translation.output) {
         setItems((current) => current.map((item) => item.id === it.id ? {
           ...item,
@@ -539,11 +545,15 @@ export default function AudioText({
       </div>
 
           <TranslationControl
-        enabled={translationEnabled}
-        setEnabled={setTranslationEnabled}
-        language={dich}
-        setLanguage={setDich}
-        active={active}
+            enabled={translationEnabled}
+            setEnabled={setTranslationEnabled}
+            language={dich}
+            setLanguage={setDich}
+            styleId={translationStyleId}
+            setStyleId={setTranslationStyleId}
+            customStyles={customStyles}
+            setCustomStyles={setCustomStyles}
+            active={active}
         onOpenSettings={onOpenSettings}
           />
           <div className="card options-card">
