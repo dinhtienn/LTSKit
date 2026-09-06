@@ -689,6 +689,60 @@ select {
   gap: 12px;
   flex-shrink: 0;
 }
+.resource-group {
+  display: grid;
+  gap: 6px;
+}
+.resource-group-title {
+  margin-top: 8px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.resource-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--panel-2);
+}
+.resource-copy {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.resource-copy > b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resource-state {
+  color: var(--muted);
+  font-size: 12px;
+}
+.resource-state.ready { color: var(--ok); }
+.resource-state.broken { color: var(--danger); }
+.resource-state.optional-missing { color: var(--warn); }
+.resource-row > .btn {
+  flex: 0 0 auto;
+}
+@media (max-width: 560px) {
+  .resource-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .resource-row > .btn {
+    align-self: flex-start;
+  }
+}
 .settings-help {
   align-self: flex-start;
 }

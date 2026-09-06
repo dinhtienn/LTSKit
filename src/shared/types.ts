@@ -508,6 +508,24 @@ export interface CacheUsage {
   total: number
 }
 
+export type ResourceState = 'ready' | 'missing' | 'broken' | 'installing' | 'optional-missing'
+export type ResourceId = 'platform' | 'whisper' | 'whisper-cuda' | 'ocr' | 'vieneu' | 'capcut'
+export interface ResourceDescriptor {
+  id: ResourceId
+  group: 'platform' | 'subtitle' | 'voice'
+  label: string
+  optional: boolean
+  state: ResourceState
+  message: string
+  action: 'setup' | 'install' | 'repair' | null
+}
+
+export interface ResourceProgress {
+  id: ResourceId
+  message: string
+  percent: number
+}
+
 export type GeminiModelDiscovery = { ok: true; models: string[] } | { ok: false; error: string }
 
 export interface GeminiTranslationResult {

@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import type { CacheNamespace, CacheUsage, CookieProfile } from '../../../shared/types'
+import type { CacheNamespace, CacheUsage, CookieProfile, ResourceDescriptor, ResourceId } from '../../../shared/types'
 import type { GeminiKeyDescriptor } from '../../../shared/types'
 import GeminiHelp from './GeminiHelp'
 import { loadSharedProxy } from '../lib/downloadConnection'
@@ -10,6 +10,14 @@ const REPO_URL = 'https://github.com/dinhtienn/LTSKit'
 const AUTHOR_URL = 'https://github.com/dinhtienn'
 const FEEDBACK_URL = 'https://github.com/dinhtienn/LTSKit/issues'
 const GEMINI_KEY_MASK = '********'
+const RESOURCE_LABELS: Record<ResourceId, string> = {
+  platform: 'FFmpeg & yt-dlp',
+  whisper: 'Whisper Audio → Text',
+  'whisper-cuda': 'Whisper CUDA',
+  ocr: 'OCR Dịch màn hình',
+  vieneu: 'VieNeu TTS',
+  capcut: 'CapCut TTS'
+}
 
 function readableSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -54,6 +62,11 @@ export default function Settings(): JSX.Element {
   const [cacheUsage, setCacheUsage] = useState<CacheUsage | null>(null)
   const [clearingCache, setClearingCache] = useState<CacheNamespace | 'all' | null>(null)
   const [cacheError, setCacheError] = useState<string | null>(null)
+  const [resources, setResources] = useState<ResourceDescriptor[]>([])
+  const [resourceBusy, setResourceBusy] = useState<ResourceId | null>(null)
+  const [resourceRefreshing, setResourceRefreshing] = useState(false)
+  const [resourceErrors, setResourceErrors] = useState<Record<string, string>>({})
+  const [resourceProgress, setResourceProgress] = useState<Record<string, { message: string; percent: number }>>({})
 
   const refreshProfiles = (): void => { void window.api.cookieProfiles().then(setProfiles) }
 
@@ -63,7 +76,33 @@ export default function Settings(): JSX.Element {
     refreshProfiles()
     void window.api.ytdlpVersion().then(setYtVer)
     void refreshCacheUsage()
+    void refreshResources()
+    return window.api.onResourceProgress((progress) => setResourceProgress((current) => ({ ...current, [progress.id]: progress })))
   }, [])
+
+  const refreshResources = async (): Promise<void> => {
+    setResourceRefreshing(true)
+    try {
+      setResources(await window.api.resourceStatus())
+      setResourceErrors({})
+    } catch (error) {
+      setResourceErrors({ _all: error instanceof Error ? error.message : 'Không đọc được trạng thái resource.' })
+    } finally {
+      setResourceRefreshing(false)
+    }
+  }
+
+  const installResource = async (id: ResourceId): Promise<void> => {
+    setResourceBusy(id)
+    setResourceErrors((current) => ({ ...current, [id]: '' }))
+    try {
+      const result = await window.api.resourceInstall(id)
+      if (!result.ok) setResourceErrors((current) => ({ ...current, [id]: result.error ?? 'Cài resource thất bại.' }))
+      await refreshResources()
+    } finally {
+      setResourceBusy(null)
+    }
+  }
 
   const refreshCacheUsage = async (): Promise<void> => {
     try {
@@ -228,8 +267,28 @@ export default function Settings(): JSX.Element {
         </div>
       </>}
 
-      {tab === 'aiTools' && <>
-        <div className="card settings-card">
+          {tab === 'aiTools' && <>
+            <div className="card settings-card">
+              <div className="cookie-title">Công cụ và engine</div>
+              <div className="muted small">Kiểm tra và cài lại các resource mà LTSKit dùng cho tải, phụ đề và giọng nói.</div>
+              {(['platform', 'subtitle', 'voice'] as const).map((group) => {
+                const labels = { platform: 'Nền tảng', subtitle: 'Phụ đề', voice: 'Giọng nói' }
+                return <div className="resource-group" key={group}>
+                  <div className="resource-group-title">{labels[group]}</div>
+                  {resources.filter((resource) => resource.group === group).map((resource) => {
+                    const progress = resourceProgress[resource.id]
+                    const busy = resourceBusy === resource.id
+                    const action = resource.state === 'ready' ? 'Kiểm tra lại' : resource.action === 'setup' ? 'Cài đặt' : 'Cài/repair'
+                    return <div className="resource-row" key={resource.id}>
+                      <div className="resource-copy"><b>{RESOURCE_LABELS[resource.id]}</b><span className={`resource-state ${resource.state}`}>{busy ? (progress?.message ?? 'Đang cài…') : resource.message}</span>{busy && progress && progress.percent >= 0 && <div className="bar"><div className="bar-fill" style={{ width: `${progress.percent}%` }} /></div>}{resourceErrors[resource.id] && <span className="dy-err small">{resourceErrors[resource.id]}</span>}</div>
+                          <button className="btn" onClick={() => resource.state === 'ready' ? void refreshResources() : void installResource(resource.id)} disabled={busy || (resource.state === 'ready' ? resourceRefreshing : false)}>{busy ? 'Đang xử lý…' : action}</button>
+                    </div>
+                  })}
+                </div>
+              })}
+              {resourceErrors._all && <div className="dy-err small">{resourceErrors._all}</div>}
+            </div>
+            <div className="card settings-card">
         <div className="cookie-head">
           <div>
             <div className="cookie-title">Gemini API key</div>

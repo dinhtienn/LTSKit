@@ -26,6 +26,9 @@ import {
   GeminiReadiness,
   GeminiTranslationResult,
   TranslationStyleSnapshot,
+  ResourceDescriptor,
+  ResourceId,
+  ResourceProgress,
   CacheNamespace,
   CacheUsage,
   LogEntry,
@@ -314,6 +317,13 @@ const api = {
   // ---- Cache ket qua job ----
   cacheUsage: (): Promise<CacheUsage> => ipcRenderer.invoke('cache:usage'),
   clearCache: (namespace?: CacheNamespace): Promise<void> => ipcRenderer.invoke('cache:clear', namespace),
+  resourceStatus: (): Promise<ResourceDescriptor[]> => ipcRenderer.invoke('resource:status'),
+  resourceInstall: (id: ResourceId): Promise<{ ok: boolean; error?: string }> => ipcRenderer.invoke('resource:install', id),
+  onResourceProgress: (cb: (progress: ResourceProgress) => void): (() => void) => {
+    const listener = (_event: unknown, progress: ResourceProgress): void => cb(progress)
+    ipcRenderer.on('resource:progress', listener)
+    return () => ipcRenderer.removeListener('resource:progress', listener)
+  },
   onLog: (cb: (e: LogEntry) => void): (() => void) => {
     const listener = (_e: unknown, entry: LogEntry): void => cb(entry)
     ipcRenderer.on('logs:entry', listener)

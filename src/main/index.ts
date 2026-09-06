@@ -75,7 +75,8 @@ import {
   clearDyCookies,
   dyCookieStatus
 } from './douyinCookies'
-import { CacheNamespace, CapcutSrtRequest, DouyinRequest, EditableSubtitleCue, OptimizeSrtRequest, TranslationStyleSnapshot, VieneuSrtRequest, WhisperRequest } from '../shared/types'
+import { CacheNamespace, CapcutSrtRequest, DouyinRequest, EditableSubtitleCue, OptimizeSrtRequest, ResourceId, TranslationStyleSnapshot, VieneuSrtRequest, WhisperRequest } from '../shared/types'
+import { getResourceStatus, installResource } from './resourceManager'
 import {
   clearLogs,
   debugRaw,
@@ -605,6 +606,15 @@ function registerIpc(): void {
   ipcMain.handle('cache:clear', async (_event, namespace?: CacheNamespace) => {
     await clearJobCache(jobCacheRoot(), namespace)
     logInfo(namespace ? `Đã xóa cache ${namespace}.` : 'Đã xóa kết quả đã lưu.')
+  })
+  ipcMain.handle('resource:status', async () => getResourceStatus())
+  ipcMain.handle('resource:install', async (event, id: ResourceId) => {
+    try {
+      await installResource(id, (progress) => event.sender.send('resource:progress', progress))
+      return { ok: true }
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'Cài resource thất bại.' }
+    }
   })
 
   // Tai xuong
