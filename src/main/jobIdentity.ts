@@ -10,6 +10,9 @@ import type { TranslationStyleSnapshot, WhisperRequest } from '../shared/types'
  * khong bi doc nham.
  */
 export const JOB_IDENTITY_VERSION = 1
+export const WHISPER_PIPELINE_VERSION = 1
+export const OCR_PIPELINE_VERSION = 1
+export const TRANSLATION_PIPELINE_VERSION = 1
 
 /**
  * Tang so nay moi khi sua prompt dich: prompt khac thi ban dich khac, nen ket
@@ -47,6 +50,7 @@ function jobKey(namespace: string, parts: unknown): string {
 export async function whisperJobKey(req: WhisperRequest): Promise<string> {
   const input = await inputFingerprint(req.input)
   return jobKey('whisper', {
+    pipelineVersion: WHISPER_PIPELINE_VERSION,
     input,
     model: req.model,
     language: req.language || 'auto',
@@ -74,7 +78,7 @@ export async function ocrJobKey(
   }
   const [x0, x1] = edges(region.x0, region.x1)
   const [y0, y1] = edges(region.y0, region.y1)
-  return jobKey('ocr', { input: await inputFingerprint(input), x0, x1, y0, y1 })
+  return jobKey('ocr', { pipelineVersion: OCR_PIPELINE_VERSION, input: await inputFingerprint(input), x0, x1, y0, y1 })
 }
 
 /**
@@ -88,6 +92,7 @@ export async function translationJobKey(
   style: TranslationStyleSnapshot
 ): Promise<string> {
   return jobKey('translation', {
+    pipelineVersion: TRANSLATION_PIPELINE_VERSION,
     input: await inputFingerprint(srtPath),
     targetLanguage,
     models: [...new Set(models)].sort(),
