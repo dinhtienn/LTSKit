@@ -100,8 +100,11 @@ export interface ProxyTestResult {
 export interface UpdateStatus {
   state: 'checking' | 'available' | 'none' | 'downloading' | 'downloaded' | 'error'
   version?: string
+  currentVersion?: string
   percent?: number
   message?: string
+  releaseNotes?: string
+  releaseUrl?: string
 }
 
 // ---- Douyin ----

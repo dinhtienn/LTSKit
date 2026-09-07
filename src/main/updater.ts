@@ -6,6 +6,8 @@ import { UpdateStatus } from '../shared/types'
 const { autoUpdater } = updaterPkg
 
 let started = false
+let pendingUpdate: Pick<UpdateStatus, 'version' | 'currentVersion' | 'releaseNotes' | 'releaseUrl'> | null = null
+const releaseUrl = (version: string): string => `https://github.com/dinhtienn/LTSKit/releases/tag/v${encodeURIComponent(version)}`
 
 /** Khoi tao tu cap nhat app (chi chay tren ban da dong goi cai dat). */
 export function initAutoUpdate(getWindow: () => BrowserWindow | null): void {
@@ -26,15 +28,33 @@ export function initAutoUpdate(getWindow: () => BrowserWindow | null): void {
   autoUpdater.on('checking-for-update', () => send({ state: 'checking' }))
   autoUpdater.on('update-available', (info) => {
     logInfo(`Có bản cập nhật app: ${info.version}`)
-    send({ state: 'available', version: info.version })
+    pendingUpdate = {
+      version: info.version,
+      currentVersion: app.getVersion(),
+      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : undefined,
+      releaseUrl: releaseUrl(info.version)
+    }
+    send({
+      state: 'available',
+      ...pendingUpdate
+    })
   })
   autoUpdater.on('update-not-available', () => send({ state: 'none' }))
   autoUpdater.on('download-progress', (p) =>
-    send({ state: 'downloading', percent: Math.round(p.percent) })
+    send({ state: 'downloading', percent: Math.round(p.percent), ...pendingUpdate })
   )
   autoUpdater.on('update-downloaded', (info) => {
     logInfo(`Đã tải bản cập nhật ${info.version} — sẵn sàng cài khi khởi động lại.`)
-    send({ state: 'downloaded', version: info.version })
+    pendingUpdate = {
+      version: info.version,
+      currentVersion: app.getVersion(),
+      releaseNotes: typeof info.releaseNotes === 'string' ? info.releaseNotes : pendingUpdate?.releaseNotes,
+      releaseUrl: releaseUrl(info.version)
+    }
+    send({
+      state: 'downloaded',
+      ...pendingUpdate
+    })
   })
   autoUpdater.on('error', (err) => {
     debugRaw('updater', err)
@@ -46,9 +66,10 @@ export function initAutoUpdate(getWindow: () => BrowserWindow | null): void {
   void autoUpdater.checkForUpdates().catch(() => {})
 }
 
-export async function checkForUpdates(): Promise<void> {
-  if (!app.isPackaged) return
+export async function checkForUpdates(): Promise<UpdateStatus | null> {
+  if (!app.isPackaged) return { state: 'error', message: 'Kiểm tra cập nhật chỉ khả dụng trên bản LTSKit đã cài đặt.' }
   await autoUpdater.checkForUpdates().catch((e) => logError(`Kiểm tra cập nhật lỗi: ${e}`))
+  return null
 }
 
 export function quitAndInstall(): void {

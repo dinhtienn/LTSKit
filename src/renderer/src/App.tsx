@@ -101,7 +101,6 @@ export default function App(): JSX.Element {
   // KHONG nho tab cuoi — moi lan mo app deu ve tab mac dinh (Tai xuong).
   // Chi nho cau hinh user setup cho tung tab (qua usePersistedState trong moi component).
   const [tab, setTab] = useState<TabKey>('download')
-  const [version, setVersion] = useState('')
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   // Moi tab co thu muc rieng; lan dau migrate tu khoa outputDir cu.
   const [outputDirs, setOutputDirs] = useState<OutputDirectories>({
@@ -143,7 +142,6 @@ export default function App(): JSX.Element {
 
   useEffect(() => {
     void check()
-    void window.api.appVersion().then(setVersion)
     void window.api.downloadsDir().then((downloads) => {
       try {
         setOutputDirs(loadOutputDirectories(localStorage.getItem('ltskit.outputDir'), downloads))
@@ -198,8 +196,6 @@ export default function App(): JSX.Element {
 
         <div className="side-bottom">
           {BOTTOM_TABS.map(renderTab)}
-
-          <div className="side-version">Phiên bản {version || '…'}</div>
 
           {update?.state === 'downloaded' && (
             <button

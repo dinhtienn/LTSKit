@@ -663,6 +663,27 @@ select {
 .settings-about-mark svg { width: 100%; height: 100%; }
 .settings-about-identity h2, .settings-about-identity p { margin: 0; }
 .settings-about-identity p { color: var(--muted); font-size: 13px; }
+.settings-about-version-row { display: flex; align-items: center; justify-content: center; gap: 12px; margin-top: 8px; }
+.settings-about-version-tag { padding: 3px 9px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); color: var(--muted); font-size: 12px; font-weight: 600; }
+.settings-about-check-button { display: inline-flex; align-items: center; gap: 4px; padding: 4px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel-2); color: var(--muted); font: inherit; font-size: 12px; cursor: pointer; }
+.settings-about-check-button:hover { border-color: var(--primary); background: var(--bg-hover); color: var(--primary); }
+.settings-about-check-button:disabled { opacity: 0.6; cursor: not-allowed; }
+.settings-update-control { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; }
+.settings-update-ok { color: var(--ok); font-size: 12px; }
+.settings-update-overlay { z-index: 100; }
+.settings-update-modal { width: min(560px, 100%); max-height: min(640px, 86vh); animation: settings-update-slide 180ms ease-out both; }
+.settings-update-modal h3 { margin: 0; font-size: 17px; }
+.settings-update-body { gap: 8px; }
+.settings-update-version { color: var(--primary); font-size: 13px; font-weight: 700; }
+.settings-update-progress { display: grid; gap: 5px; margin: 4px 0; }
+.settings-update-ready { color: var(--ok); font-size: 13px; }
+.settings-release-notes { margin-top: 8px; padding: 12px; border-top: 1px solid var(--border); background: transparent; }
+.settings-release-title { margin-bottom: 6px; color: var(--muted); font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.settings-release-notes ul { max-height: 200px; overflow-y: auto; display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.settings-release-notes li { position: relative; padding-left: 16px; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.settings-release-notes li:not(.settings-release-heading)::before { content: '•'; position: absolute; left: 0; color: var(--primary); font-weight: 700; }
+.settings-release-heading { padding-left: 0 !important; margin-top: 5px; color: var(--text) !important; font-weight: 700; }
+@keyframes settings-update-slide { from { opacity: 0; transform: translateY(10px) scale(.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .settings-about-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
 .settings-about-card { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; min-height: 88px; padding: 16px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; color: var(--text); font: inherit; text-align: center; cursor: pointer; box-shadow: var(--shadow-sm); transition: transform 180ms ease, background 180ms ease, border-color 180ms ease, box-shadow 180ms ease; }
 .settings-about-card:hover { transform: translateY(-2px); background: var(--bg-hover); border-color: color-mix(in srgb, var(--primary) 45%, var(--border)); box-shadow: var(--shadow-md); }
@@ -675,6 +696,8 @@ select {
 .cookie-profile { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 10px; border-radius: 8px; background: var(--bg2); }
 @media (max-width: 600px) { .cookie-profile { align-items: flex-start; flex-direction: column; } }
 @media (max-width: 560px) {
+  .settings-update-control { align-items: stretch; flex-direction: column; }
+  .settings-update-modal .modal-foot { flex-wrap: wrap; }
   .settings-tabs { width: 100%; gap: 4px; }
   .settings-tab { flex: 1 1 calc(50% - 4px); justify-content: center; padding: 0 8px; }
   .settings-about-grid { grid-template-columns: 1fr; }

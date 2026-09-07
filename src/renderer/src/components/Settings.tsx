@@ -1,6 +1,7 @@
 import type { JSX } from 'react'
 import { useEffect, useState } from 'react'
-import type { CacheNamespace, CacheUsage, CookieProfile, ResourceDescriptor, ResourceId } from '../../../shared/types'
+import type { CacheNamespace, CacheUsage, CookieProfile, ResourceDescriptor, ResourceId, UpdateStatus } from '../../../shared/types'
+import { formatReleaseNotes } from '../../../shared/updateReleaseNotes'
 import type { GeminiKeyDescriptor } from '../../../shared/types'
 import GeminiHelp from './GeminiHelp'
 import { loadSharedProxy } from '../lib/downloadConnection'
@@ -67,6 +68,8 @@ export default function Settings(): JSX.Element {
   const [resourceRefreshing, setResourceRefreshing] = useState(false)
   const [resourceErrors, setResourceErrors] = useState<Record<string, string>>({})
   const [resourceProgress, setResourceProgress] = useState<Record<string, { message: string; percent: number }>>({})
+  const [aboutVersion, setAboutVersion] = useState('')
+  const [updateStatus, setUpdateStatus] = useState<UpdateStatus | null>(null)
 
   const refreshProfiles = (): void => { void window.api.cookieProfiles().then(setProfiles) }
 
@@ -75,10 +78,30 @@ export default function Settings(): JSX.Element {
     void window.api.geminiModels().then(setPool)
     refreshProfiles()
     void window.api.ytdlpVersion().then(setYtVer)
+    void window.api.appVersion().then(setAboutVersion)
     void refreshCacheUsage()
     void refreshResources()
-    return window.api.onResourceProgress((progress) => setResourceProgress((current) => ({ ...current, [progress.id]: progress })))
+    const offResource = window.api.onResourceProgress((progress) => setResourceProgress((current) => ({ ...current, [progress.id]: progress })))
+    const offUpdate = window.api.onUpdateStatus(setUpdateStatus)
+    return () => { offResource(); offUpdate() }
   }, [])
+
+  const checkForAppUpdate = async (): Promise<void> => {
+    setUpdateStatus({ state: 'checking' })
+    const status = await window.api.checkAppUpdate()
+    if (status) setUpdateStatus(status)
+  }
+
+  const renderReleaseText = (text: string): JSX.Element[] => text.split(/(\*\*.*?\*\*)/g).map((part, index) =>
+    part.startsWith('**') && part.endsWith('**')
+      ? <strong key={index}>{part.slice(2, -2)}</strong>
+      : <span key={index}>{part}</span>
+  )
+
+  const renderReleaseBlock = (block: ReturnType<typeof formatReleaseNotes>[number], index: number): JSX.Element =>
+    block.kind === 'heading'
+      ? <li className="settings-release-heading" key={index}>{block.text}</li>
+      : <li key={index}>{renderReleaseText(block.text)}</li>
 
   const refreshResources = async (): Promise<void> => {
     setResourceRefreshing(true)
@@ -417,9 +440,11 @@ export default function Settings(): JSX.Element {
                 <circle cx="512" cy="307" r="40" fill="#fff" />
               </svg>
             </span>
-            <div><h2>LTSKit</h2><p>Công cụ tải, xử lý và dịch nội dung đa nền tảng.</p></div>
-          </div>
-          <div className="settings-about-grid">
+                <div><h2>LTSKit</h2><p>Công cụ tải, xử lý và dịch nội dung đa nền tảng.</p><div className="settings-about-version-row"><span className="settings-about-version-tag">v{aboutVersion || '…'}</span><button className="settings-about-check-button" onClick={() => void checkForAppUpdate()} disabled={updateStatus?.state === 'checking'}>{updateStatus?.state === 'checking' ? 'Đang kiểm tra…' : '↻ Kiểm tra cập nhật'}</button></div></div>
+              </div>
+                  {updateStatus?.state === 'none' && <div className="settings-update-ok">Bạn đang dùng phiên bản mới nhất.</div>}
+              {updateStatus?.state === 'error' && <div className="dy-err small">{updateStatus.message || 'Không kiểm tra được cập nhật.'}</div>}
+              <div className="settings-about-grid">
             <button className="settings-about-card" onClick={() => window.api.openExternal(AUTHOR_URL)}>
               <span className="settings-about-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" /></svg></span>
               <span className="settings-about-copy"><b>Tác giả</b><small>dinhtienn</small></span><span className="settings-about-arrow">-&gt;</span>
@@ -432,12 +457,33 @@ export default function Settings(): JSX.Element {
               <span className="settings-about-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 11.5a8.4 8.4 0 0 1-9 8.5 9.4 9.4 0 0 1-4-.9L3 21l1.8-4.2A8.3 8.3 0 0 1 3 11.5 8.5 8.5 0 0 1 12 3a8.5 8.5 0 0 1 9 8.5Z" /></svg></span>
               <span className="settings-about-copy"><b>Phản hồi</b><small>Báo lỗi hoặc góp ý</small></span><span className="settings-about-arrow">-&gt;</span>
             </button>
-          </div>
-        </div>
-      )}
+              </div>
+            </div>
+          )}
       </div>
 
-      {hienHd && <GeminiHelp onClose={() => setHienHd(false)} />}
+          {hienHd && <GeminiHelp onClose={() => setHienHd(false)} />}
+          {updateStatus && ['available', 'downloading', 'downloaded'].includes(updateStatus.state) && (
+            <div className="modal-overlay settings-update-overlay" onClick={() => updateStatus.state !== 'downloaded' && setUpdateStatus(null)}>
+              <div className="modal settings-update-modal" onClick={(event) => event.stopPropagation()}>
+                <div className="modal-head">
+                  <h3>✨ Có bản cập nhật mới</h3>
+                  <button className="modal-x" onClick={() => setUpdateStatus(null)} aria-label="Đóng">×</button>
+                </div>
+                <div className="modal-body settings-update-body">
+                  <div className="settings-update-version">v{updateStatus.version}</div>
+                  <div className="muted small">Phiên bản mới đã được phát hành cho LTSKit.</div>
+                  {updateStatus.state === 'downloading' && <div className="settings-update-progress"><div className="bar"><div className="bar-fill" style={{ width: `${updateStatus.percent ?? 0}%` }} /></div><span className="muted small">Đang tải… {updateStatus.percent ?? 0}%</span></div>}
+                  {updateStatus.state === 'downloaded' && <div className="settings-update-ready">Bản cập nhật đã sẵn sàng.</div>}
+                  {(() => { const notes = formatReleaseNotes(updateStatus.releaseNotes); return notes.length > 0 ? <div className="settings-release-notes"><div className="settings-release-title">Tính năng mới</div><ul>{notes.map(renderReleaseBlock)}</ul></div> : null })()}
+                </div>
+                <div className="modal-foot">
+                  <button className="btn" onClick={() => setUpdateStatus(null)} disabled={updateStatus.state === 'downloaded'}>Để sau</button>
+                  {updateStatus.state === 'downloaded' && <button className="btn primary" onClick={() => void window.api.installAppUpdate()}>Cập nhật ngay</button>}
+                </div>
+              </div>
+            </div>
+          )}
     </div>
   )
 }

@@ -102,7 +102,7 @@ const api = {
   appVersion: (): Promise<string> => ipcRenderer.invoke('app:version'),
 
   // Tu cap nhat app
-  checkAppUpdate: (): Promise<void> => ipcRenderer.invoke('update:check'),
+  checkAppUpdate: (): Promise<UpdateStatus | null> => ipcRenderer.invoke('update:check'),
   installAppUpdate: (): Promise<void> => ipcRenderer.invoke('update:install'),
   onUpdateStatus: (cb: (s: UpdateStatus) => void): (() => void) => {
     const listener = (_e: unknown, s: UpdateStatus): void => cb(s)
