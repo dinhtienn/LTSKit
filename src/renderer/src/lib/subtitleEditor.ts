@@ -84,3 +84,46 @@ export function validateEditableCues(
   }
   return { canSave: !issues.some((issue) => issue.severity === 'error'), issues }
 }
+
+function reindex(cues: EditableSubtitleCue[]): EditableSubtitleCue[] {
+  return cues.map((cue, index) => ({ ...cue, index: index + 1 }))
+}
+
+export function splitEditableCue(cues: EditableSubtitleCue[], id: string, cursorOffset: number, nextId: string): EditableSubtitleCue[] {
+  const index = cues.findIndex((cue) => cue.id === id)
+  if (index < 0) return cues
+  const cue = cues[index]
+  if (!Number.isInteger(cursorOffset) || cursorOffset <= 0 || cursorOffset >= cue.text.length) return cues
+  const left = cue.text.slice(0, cursorOffset)
+  const right = cue.text.slice(cursorOffset)
+  const start = parseSrtTimestamp(cue.start)
+  const end = parseSrtTimestamp(cue.end)
+  if (!left.trim() || !right.trim() || start == null || end == null || end <= start) return cues
+  const midpoint = formatSrtTimestamp(start + (end - start) / 2)
+  const first = { ...cue, end: midpoint, text: left.trim() }
+  const second: EditableSubtitleCue = { id: nextId, index: cue.index + 1, start: midpoint, end: cue.end, text: right.trim() }
+  return reindex([...cues.slice(0, index), first, second, ...cues.slice(index + 1)])
+}
+
+export function mergeEditableCueWithNext(cues: EditableSubtitleCue[], id: string): EditableSubtitleCue[] {
+  const index = cues.findIndex((cue) => cue.id === id)
+  if (index < 0 || index >= cues.length - 1) return cues
+  const first = cues[index]
+  const next = cues[index + 1]
+  const merged = { ...first, end: next.end, text: `${first.text.trim()}\n${next.text.trim()}` }
+  return reindex([...cues.slice(0, index), merged, ...cues.slice(index + 2)])
+}
+
+export function replaceAllCueText(cues: EditableSubtitleCue[], find: string, replacement: string): { cues: EditableSubtitleCue[]; replacements: number } {
+  if (!find) return { cues, replacements: 0 }
+  let replacements = 0
+  const next = cues.map((cue) => {
+    let offset = 0
+    while ((offset = cue.text.indexOf(find, offset)) >= 0) {
+      replacements += 1
+      offset += find.length
+    }
+    return { ...cue, text: cue.text.split(find).join(replacement) }
+  })
+  return replacements ? { cues: reindex(next), replacements } : { cues, replacements: 0 }
+}

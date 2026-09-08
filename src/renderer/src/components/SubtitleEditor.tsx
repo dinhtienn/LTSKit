@@ -1,7 +1,7 @@
 import type { JSX } from 'react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import type { EditableSubtitleCue, SubtitleCueIssue } from '../lib/subtitleEditor'
-import { editableCueCps, validateEditableCues } from '../lib/subtitleEditor'
+import { editableCueCps, mergeEditableCueWithNext, replaceAllCueText, splitEditableCue, validateEditableCues } from '../lib/subtitleEditor'
 
 export interface SubtitleEditorProps {
   path: string
@@ -17,6 +17,10 @@ export default function SubtitleEditor({ path, targetCps, onClose, onSaved }: Su
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [findText, setFindText] = useState('')
+  const [replacementText, setReplacementText] = useState('')
+  const [replaceMessage, setReplaceMessage] = useState<string | null>(null)
+  const textareas = useRef<Record<string, HTMLTextAreaElement | null>>({})
 
   useEffect(() => {
     let alive = true
@@ -43,6 +47,35 @@ export default function SubtitleEditor({ path, targetCps, onClose, onSaved }: Su
       return next
     })
     setDirty(true)
+  }
+
+  const applyCues = (next: EditableSubtitleCue[]): void => {
+    setCues(next)
+    setIssues(validateEditableCues(next, targetCps).issues)
+    setDirty(true)
+    setReplaceMessage(null)
+  }
+
+  const splitCue = (id: string): void => {
+    const next = splitEditableCue(cues, id, textareas.current[id]?.selectionStart ?? 0, crypto.randomUUID())
+    if (next === cues) setError('Đặt con trỏ giữa hai phần nội dung để chia cue.')
+    else applyCues(next)
+  }
+
+  const mergeCue = (id: string): void => {
+    const next = mergeEditableCueWithNext(cues, id)
+    if (next === cues) setError('Không có cue kế tiếp để gộp.')
+    else applyCues(next)
+  }
+
+  const replaceText = (): void => {
+    const result = replaceAllCueText(cues, findText, replacementText)
+    if (!result.replacements) {
+      setReplaceMessage(findText ? 'Không tìm thấy kết quả.' : null)
+      return
+    }
+    applyCues(result.cues)
+    setReplaceMessage(`Đã thay ${result.replacements} lần.`)
   }
 
   const close = (): void => {
@@ -78,9 +111,15 @@ export default function SubtitleEditor({ path, targetCps, onClose, onSaved }: Su
         <button className="btn" onClick={close}>Quay lại hàng đợi</button>
       </div>
       {error && <div className="dy-err small">{error}</div>}
+      <div className="subtitle-editor-tools">
+        <input value={findText} onChange={(event) => setFindText(event.target.value)} placeholder="Tìm" aria-label="Tìm" />
+        <input value={replacementText} onChange={(event) => setReplacementText(event.target.value)} placeholder="Thay bằng" aria-label="Thay bằng" />
+        <button className="btn" disabled={!findText} onClick={replaceText}>Thay tất cả</button>
+        {replaceMessage && <span className="muted small">{replaceMessage}</span>}
+      </div>
       <div className="subtitle-editor-table-wrap">
         <table className="subtitle-editor-table">
-          <thead><tr><th>#</th><th>Bắt đầu</th><th>Kết thúc</th><th>Nội dung</th><th>CPS</th><th>Trạng thái</th></tr></thead>
+              <thead><tr><th>#</th><th>Bắt đầu</th><th>Kết thúc</th><th>Nội dung</th><th>CPS</th><th>Trạng thái</th><th>Thao tác</th></tr></thead>
           <tbody>
             {cues.map((cue) => {
               const issue = issueFor(cue.id)
@@ -89,9 +128,10 @@ export default function SubtitleEditor({ path, targetCps, onClose, onSaved }: Su
                   <td>{cue.index}</td>
                   <td><input value={cue.start} onChange={(event) => updateCue(cue.id, { start: event.target.value })} aria-label={`Bắt đầu cue ${cue.index}`} /></td>
                   <td><input value={cue.end} onChange={(event) => updateCue(cue.id, { end: event.target.value })} aria-label={`Kết thúc cue ${cue.index}`} /></td>
-                  <td><textarea rows={2} value={cue.text} onChange={(event) => updateCue(cue.id, { text: event.target.value })} aria-label={`Nội dung cue ${cue.index}`} /></td>
+                      <td><textarea ref={(element) => { textareas.current[cue.id] = element }} rows={2} value={cue.text} onChange={(event) => updateCue(cue.id, { text: event.target.value })} aria-label={`Nội dung cue ${cue.index}`} /></td>
                   <td>{Number.isFinite(editableCueCps(cue)) ? editableCueCps(cue).toFixed(1) : '—'}</td>
-                  <td className={issue?.severity === 'error' ? 'dy-err small' : issue ? 'qwarn small' : 'muted small'}>{issue?.message ?? 'Đạt'}</td>
+                      <td className={issue?.severity === 'error' ? 'dy-err small' : issue ? 'qwarn small' : 'muted small'}>{issue?.message ?? 'Đạt'}</td>
+                      <td><div className="subtitle-editor-actions"><button className="btn small-btn" onClick={() => splitCue(cue.id)}>Chia</button>{cue.index < cues.length && <button className="btn small-btn" onClick={() => mergeCue(cue.id)}>Gộp ↓</button>}</div></td>
                 </tr>
               )
             })}

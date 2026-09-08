@@ -1054,6 +1054,9 @@ select {
 .layer-count { margin-left: auto; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
 .layer-footer { margin-top: auto; min-height: 20px; }
 .subtitle-editor { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.subtitle-editor-tools { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.subtitle-editor-tools input { min-width: 160px; flex: 1 1 180px; padding: 8px 10px; border: 1px solid var(--border); border-radius: 7px; background: var(--panel-2); color: var(--text); font: inherit; }
+.subtitle-editor-actions { display: flex; gap: 5px; flex-wrap: wrap; }
 .subtitle-editor-table-wrap { overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; }
 .subtitle-editor-table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: 12px; }
 .subtitle-editor-table th, .subtitle-editor-table td { padding: 7px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
