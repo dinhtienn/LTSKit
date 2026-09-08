@@ -6,6 +6,7 @@ import { ASSET_BASE, binDir, DATA_DIR, downloadFile, ensureDataDirs, extractZip 
 import { jobCacheRoot, readCachedOutputs, writeCachedOutputs } from './jobCache'
 import { whisperJobKey } from './jobIdentity'
 import { formatProcessingMetric } from './processingMetrics'
+import { acquireGpu, type GpuLease } from './gpuScheduler'
 import { debugRaw, errLabel, logError, logInfo } from './logger'
 import {
   WhisperCudaStatus,
@@ -162,6 +163,8 @@ export async function transcribeAudio(
     }
   }
 
+  const gpuLease: GpuLease | null = useCuda ? await acquireGpu() : null
+
   const args = [
     '--input', req.input,
     '--output-dir', req.outputDir,
@@ -272,6 +275,7 @@ export async function transcribeAudio(
       const nhan = errLabel(err)
       logError(`Audio→Text: ${nhan}`)
       logError(formatProcessingMetric({ job: 'Whisper', elapsedMs: performance.now() - startedAt, outcome: 'lỗi', device: useCuda ? 'GPU' : 'CPU', cache: 'miss' }))
+      gpuLease?.release()
       resolve({ id, ok: false, outputs: [], segments: 0, speakers: 0, error: nhan })
     })
 
@@ -291,8 +295,9 @@ export async function transcribeAudio(
             debugRaw('whisper cache write', err)
           })
         }
-        onProgress({ id, status: 'finished', percent: 100, language, line: null })
-        resolve({ id, ok: true, outputs, segments, speakers, error: null })
+            onProgress({ id, status: 'finished', percent: 100, language, line: null })
+            gpuLease?.release()
+            resolve({ id, ok: true, outputs, segments, speakers, error: null })
       } else {
         // errTail la stderr THO cua engine — traceback Python lo ten module,
         // duong dan, ca ngan xep cong nghe. TUYET DOI khong dua ra ngoai.
@@ -301,8 +306,9 @@ export async function transcribeAudio(
         const nhan = errLabel(raw)
             logError(`Audio→Text: ${nhan}`)
             logError(formatProcessingMetric({ job: 'Whisper', elapsedMs: performance.now() - startedAt, outcome: 'lỗi', device: useCuda ? 'GPU' : 'CPU', cache: 'miss' }))
+            gpuLease?.release()
         onProgress({ id, status: 'error', percent: -1, language, line: nhan })
-        resolve({ id, ok: false, outputs, segments, speakers, error: nhan })
+            resolve({ id, ok: false, outputs, segments, speakers, error: nhan })
       }
     })
   })

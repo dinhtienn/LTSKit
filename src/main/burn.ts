@@ -26,6 +26,7 @@ import type { BurnReq, BurnProgress, BurnResult, CoChu, SubtitleStyle, TextOverl
 import type { RenderRange } from './previewRange'
 import { renderRangeArgs } from './previewRange'
 import { formatProcessingMetric } from './processingMetrics'
+import { acquireGpu, type GpuLease } from './gpuScheduler'
 
 let child: ChildProcess | null = null
 
@@ -34,17 +35,20 @@ type BurnState = 'idle' | 'running' | 'committing'
 export class BurnLifecycle {
   private state: BurnState = 'idle'
   private cancelled = false
+  private controller = new AbortController()
 
   start(): boolean {
     if (this.state !== 'idle') return false
     this.state = 'running'
     this.cancelled = false
+    this.controller = new AbortController()
     return true
   }
 
   cancel(): boolean {
     if (this.state !== 'running') return false
     this.cancelled = true
+    this.controller.abort()
     return true
   }
 
@@ -65,6 +69,10 @@ export class BurnLifecycle {
 
   current(): BurnState {
     return this.state
+  }
+
+  signal(): AbortSignal {
+    return this.controller.signal
   }
 }
 
@@ -598,26 +606,60 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       : [{ ten: 'copy', gpu: false, args: ['-c:v', 'copy'] }]
 
     logInfo(`Dịch màn hình: ghép nội dung vào ${basename(req.video)}…`)
+    let gpuLease: GpuLease | null = null
+    const hasHardware = encoders.some((enc) => enc.gpu)
+    if (hasHardware) {
+      let waited = false
+      const waitTimer = setTimeout(() => {
+        waited = true
+        logInfo(`${options.promote === false ? 'Preview video' : 'Xuất video'}: đang chờ GPU…`)
+      }, 500)
+      try {
+        gpuLease = await acquireGpu(burnLifecycle.signal())
+      } catch (error) {
+        clearTimeout(waitTimer)
+        if (error instanceof Error && error.name === 'AbortError') return { ok: false, error: 'Đã huỷ.' }
+        throw error
+      } finally {
+        clearTimeout(waitTimer)
+        void waited
+      }
+    }
     for (const [attempt, enc] of encoders.entries()) {
       if (burnLifecycle.isCancelled()) break
       const attemptOutput = temporaryOutputPath(tam, attempt)
       const code = await chay(ff, [...commonArgs, ...enc.args, attemptOutput], tam, meta, onProgress)
-      if (burnLifecycle.isCancelled()) return { ok: false, error: 'Đã huỷ.' }
+      if (burnLifecycle.isCancelled()) {
+        gpuLease?.release()
+        return { ok: false, error: 'Đã huỷ.' }
+      }
       const validOutput = code === 0 && (await duLon(attemptOutput))
-      if (burnLifecycle.isCancelled()) return { ok: false, error: 'Đã huỷ.' }
+      if (burnLifecycle.isCancelled()) {
+        gpuLease?.release()
+        return { ok: false, error: 'Đã huỷ.' }
+      }
+      if (!enc.gpu && gpuLease) {
+        gpuLease.release()
+        gpuLease = null
+      }
           if (validOutput) {
             if (options.promote === false) {
               await rename(attemptOutput, output)
+              gpuLease?.release()
               logInfo(formatProcessingMetric({ job: 'Preview video', elapsedMs: performance.now() - startedAt, outcome: 'xong', device: `${enc.gpu ? 'GPU ' : 'CPU '}${enc.ten}` }))
               return { ok: true, output }
             }
-        const promotion = await promoteOutput(attemptOutput, output, burnLifecycle)
-        if (promotion === 'cancelled') return { ok: false, error: 'Đã huỷ.' }
+            const promotion = await promoteOutput(attemptOutput, output, burnLifecycle)
+            if (promotion === 'cancelled') {
+              gpuLease?.release()
+              return { ok: false, error: 'Đã huỷ.' }
+            }
             logInfo(
               `Dịch màn hình: ghép video xong bằng ${enc.ten}${enc.gpu ? ' (tăng tốc GPU)' : ' (chạy bằng CPU)'}.`
             )
             logInfo(formatProcessingMetric({ job: 'Xuất video', elapsedMs: performance.now() - startedAt, outcome: 'xong', device: `${enc.gpu ? 'GPU ' : 'CPU '}${enc.ten}` }))
-        return { ok: true, output }
+            gpuLease?.release()
+            return { ok: true, output }
       }
       // Nguoi dung can biet vi sao may chay CPU thay vi GPU — im lang o day
       // khien viec xuat cham ma khong ai doan duoc nguyen nhan.
@@ -626,6 +668,7 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       }
       await rm(attemptOutput, { force: true })
     }
+    gpuLease?.release()
     if (burnLifecycle.isCancelled()) return { ok: false, error: 'Đã huỷ.' }
     return { ok: false, error: 'Ghép video thất bại.' }
   } finally {
