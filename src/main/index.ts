@@ -50,6 +50,7 @@ import { discoverModels, geminiReadiness, loadModelPool, saveModelPool } from '.
 import { cancelOcr, installOcrEngine, ocrEngineStatus, ocrVideo } from './ocr'
 import { cacheUsageBytes, clearJobCache, jobCacheRoot } from './jobCache'
 import { burnSubtitle, cancelBurn, srtGiay, srtNoiDung } from './burn'
+import { cancelVideoPreview, cleanupVideoPreview, renderVideoPreview } from './previewRender'
 import { probeLogoDimensions, probeMedia } from './videoComposer'
 import {
   addVieneuClonedVoice,
@@ -479,7 +480,12 @@ function registerIpc(): void {
   ipcMain.handle('burn:start', async (event, req: BurnReq) =>
     burnSubtitle(req, (p) => event.sender.send('burn:progress', p))
   )
-  ipcMain.handle('burn:cancel', async () => cancelBurn())
+      ipcMain.handle('burn:cancel', async () => cancelBurn())
+      ipcMain.handle('video-preview:render', async (event, req: BurnReq, startSec: number) =>
+        renderVideoPreview(req, startSec, (progress) => event.sender.send('video-preview:progress', progress))
+      )
+      ipcMain.handle('video-preview:cancel', async () => cancelVideoPreview())
+      ipcMain.handle('video-preview:cleanup', async () => cleanupVideoPreview())
   // Do do dai file .srt -> renderer canh bao khi lech han so voi video
   ipcMain.handle('burn:srtGiay', async (_e, duong: string) => srtGiay(duong))
   ipcMain.handle('burn:srtNoiDung', async (_e, duong: string) => srtNoiDung(duong))

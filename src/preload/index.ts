@@ -47,6 +47,7 @@ import {
   ProxyTestResult,
   SetupProgress,
   UpdateStatus,
+  VideoPreviewResult,
   VideoInfo,
   WhisperCudaStatus,
   WhisperEngineStatus,
@@ -202,6 +203,9 @@ const api = {
     ipcRenderer.invoke('burn:logoDimensions', path),
   burnStart: (req: BurnReq): Promise<BurnResult> => ipcRenderer.invoke('burn:start', req),
   burnCancel: (): Promise<void> => ipcRenderer.invoke('burn:cancel'),
+  videoPreviewRender: (req: BurnReq, startSec: number): Promise<VideoPreviewResult> => ipcRenderer.invoke('video-preview:render', req, startSec),
+  videoPreviewCancel: (): Promise<void> => ipcRenderer.invoke('video-preview:cancel'),
+  videoPreviewCleanup: (): Promise<void> => ipcRenderer.invoke('video-preview:cleanup'),
   /** Do dai file .srt (giay) — de canh bao khi lech han so voi video. */
   srtGiay: (duong: string): Promise<number> => ipcRenderer.invoke('burn:srtGiay', duong),
   srtNoiDung: (duong: string): Promise<string> => ipcRenderer.invoke('burn:srtNoiDung', duong),
@@ -307,6 +311,11 @@ const api = {
     const listener = (_e: unknown, progress: VieneuProgress): void => cb(progress)
     ipcRenderer.on('capcut:progress', listener)
     return () => ipcRenderer.removeListener('capcut:progress', listener)
+  },
+  onVideoPreviewProgress: (cb: (p: BurnProgress) => void): (() => void) => {
+    const listener = (_e: unknown, p: BurnProgress): void => cb(p)
+    ipcRenderer.on('video-preview:progress', listener)
+    return () => ipcRenderer.removeListener('video-preview:progress', listener)
   },
 
   // ---- Nhat ky hoat dong ----

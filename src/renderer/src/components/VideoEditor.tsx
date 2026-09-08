@@ -1,6 +1,6 @@
 import type { JSX } from 'react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import type { BlurRegion, CoChu, ExportSpeed, MediaProbe, SubtitleStyle, TextOverlay, VideoRect } from '../../../shared/types'
+import type { BlurRegion, BurnReq, CoChu, ExportSpeed, MediaProbe, SubtitleStyle, TextOverlay, VideoRect } from '../../../shared/types'
 import { duckGainAt, mergeDuckWindows } from '../../../shared/duckingEnvelope'
 import { subtitleFontSize } from '../../../shared/subtitleLayout'
 import { usePersistedState } from '../lib/persist'
@@ -90,6 +90,11 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
   const [ghepPct, setGhepPct] = useState(0)
   const [ghepOut, setGhepOut] = useState('')
   const [ghepLoi, setGhepLoi] = useState<string | null>(null)
+  const [previewState, setPreviewState] = useState<'idle' | 'chay'>('idle')
+  const [previewPct, setPreviewPct] = useState(0)
+  const [previewOutput, setPreviewOutput] = useState<string | null>(null)
+  const [previewRangeLabel, setPreviewRangeLabel] = useState('')
+  const [previewError, setPreviewError] = useState<string | null>(null)
 
   const videoRef = useRef<HTMLVideoElement | null>(null)
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -356,6 +361,33 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
     hasOperation && (!subtitleEnabled || !!srtNgoai) && (!textEnabled || textOverlays.length > 0) && (!voiceEnabled || !!voice) && (!logoEnabled || !!logo)
   const minutes = (seconds: number): string => `${Math.floor(Math.round(seconds) / 60)}:${String(Math.round(seconds) % 60).padStart(2, '0')}`
 
+  const buildBurnRequest = (targetDir: string): BurnReq => ({
+    video: video!,
+    outputDir: targetDir,
+    srt: subtitleEnabled ? srtNgoai : null,
+    mode: subtitleEnabled ? ghepMode : undefined,
+    subRegion: subtitleEnabled && ghepMode === 'burn' ? subRegion : null,
+    subtitleStyle,
+    textFontId,
+    textOverlays: textEnabled ? textOverlays : [],
+    blurRegions: blurEnabled ? blurRegions : [],
+    lamMo: blurEnabled,
+    coChu: coChu as CoChu,
+    catSrt: subtitleEnabled && subtitleMismatch === 'dai',
+    voice: voiceEnabled ? voice : null,
+    videoVolume,
+    voiceVolume,
+    ducking: {
+      enabled: duckingEnabled && voiceEnabled && !!voice && !!srtNgoai,
+      timingSrt: srtNgoai || null,
+      duckPercent,
+      attackMs: duckAttackMs,
+      releaseMs: duckReleaseMs
+    },
+    logo: logoEnabled && logo ? { path: logo, rect: logoRect } : null,
+    exportSpeed: exportSpeed as ExportSpeed
+  })
+
   const exportVideo = async (): Promise<void> => {
     if (!video || !outputDir || !canExport) return
     setGhep('chay')
@@ -364,32 +396,7 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
     let off = (): void => undefined
     try {
       off = window.api.onBurnProgress((progress) => setGhepPct(progress.percent < 0 ? 0 : progress.percent))
-      const result = await window.api.burnStart({
-        video,
-        outputDir,
-        srt: subtitleEnabled ? srtNgoai : null,
-        mode: subtitleEnabled ? ghepMode : undefined,
-        subRegion: subtitleEnabled && ghepMode === 'burn' ? subRegion : null,
-        subtitleStyle,
-        textFontId,
-        textOverlays: textEnabled ? textOverlays : [],
-        blurRegions: blurEnabled ? blurRegions : [],
-        lamMo: blurEnabled,
-        coChu: coChu as CoChu,
-        catSrt: subtitleEnabled && subtitleMismatch === 'dai',
-        voice: voiceEnabled ? voice : null,
-        videoVolume,
-        voiceVolume,
-        ducking: {
-          enabled: duckingEnabled && voiceEnabled && !!voice && !!srtNgoai,
-          timingSrt: srtNgoai || null,
-          duckPercent: duckPercent,
-          attackMs: duckAttackMs,
-          releaseMs: duckReleaseMs
-        },
-        logo: logoEnabled && logo ? { path: logo, rect: logoRect } : null,
-        exportSpeed: exportSpeed as ExportSpeed
-      })
+      const result = await window.api.burnStart(buildBurnRequest(outputDir))
       if (!result.ok) {
         if (result.error === 'Đã huỷ.') setGhep('idle')
         else {
@@ -411,6 +418,31 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
       }
     }
   }
+
+  const renderPreview = async (): Promise<void> => {
+    if (!video || !canExport || previewState === 'chay') return
+    setPreviewState('chay')
+    setPreviewPct(0)
+    setPreviewError(null)
+    let off = (): void => undefined
+    try {
+      off = window.api.onVideoPreviewProgress((progress) => setPreviewPct(progress.percent < 0 ? 0 : progress.percent))
+      const result = await window.api.videoPreviewRender(buildBurnRequest(outputDir), currentTime)
+      if (!result.ok || !result.output) {
+        setPreviewError(result.error ?? 'Không tạo được preview.')
+        return
+      }
+      setPreviewOutput(result.output)
+      setPreviewRangeLabel(`${minutes(result.startSec ?? currentTime)} → ${minutes((result.startSec ?? currentTime) + (result.durationSec ?? 5))}`)
+    } catch {
+      setPreviewError('Không tạo được preview.')
+    } finally {
+      off()
+      setPreviewState('idle')
+    }
+  }
+
+  useEffect(() => () => { void window.api.videoPreviewCleanup() }, [])
 
   const addBlurRegion = (): void => {
     if (!media) return
@@ -998,10 +1030,16 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
               </div>
                 </div>
                 <div className="cookie-actions">
-              {ghep !== 'chay' ? (
-                <button className="btn primary" disabled={!canExport || !outputDir} onClick={exportVideo}>
-                  🎬 Xuất video
-                </button>
+                  {ghep !== 'chay' ? (
+                    <>
+                      <button className="btn" disabled={!canExport || previewState === 'chay'} onClick={() => void renderPreview()}>
+                        {previewState === 'chay' ? `Đang xem thử… ${previewPct}%` : '▶ Xem thử 5 giây'}
+                      </button>
+                      {previewState === 'chay' && <button className="btn danger" onClick={() => void window.api.videoPreviewCancel()}>Dừng preview</button>}
+                      <button className="btn primary" disabled={!canExport || !outputDir || previewState === 'chay'} onClick={exportVideo}>
+                        🎬 Xuất video
+                      </button>
+                    </>
               ) : (
                 <>
                   <button className="btn danger" onClick={() => window.api.burnCancel()}>
@@ -1017,7 +1055,8 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
               </div>
                 )}
                 {ghepLoi && <div className="dy-err small">{ghepLoi}</div>}
-                {ghep === 'xong' && (
+                    {previewError && <div className="dy-err small">{previewError}</div>}
+                    {ghep === 'xong' && (
               <div className="muted small" style={{ marginTop: 8 }}>
                 ✅ Đã xuất ·{' '}
                 <button className="link-btn" onClick={() => window.api.showItem(ghepOut)}>
@@ -1203,6 +1242,15 @@ export default function VideoEditor({ outputDir, setOutputDir }: { outputDir: st
             <div className="muted small">Chưa chọn video — bấm “Chọn video” bên trái.</div>
           </div>
         )}
+      {previewOutput && (
+        <div className="modal-overlay fast-preview-overlay" onClick={() => setPreviewOutput(null)}>
+          <div className="modal fast-preview-modal" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-head"><h3>Preview {previewRangeLabel}</h3><button className="modal-x" onClick={() => setPreviewOutput(null)} aria-label="Đóng">×</button></div>
+            <div className="modal-body fast-preview-body"><video src={mediaUrl(previewOutput)} controls autoPlay /></div>
+            <div className="modal-foot"><button className="btn" onClick={() => void renderPreview()}>Render lại</button><button className="btn primary" onClick={() => setPreviewOutput(null)}>Đóng</button></div>
+          </div>
+        </div>
+      )}
       </div>
     </div>
   )

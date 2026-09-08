@@ -317,6 +317,11 @@ export interface BurnResult {
   error?: string
 }
 
+export interface VideoPreviewResult extends BurnResult {
+  startSec?: number
+  durationSec?: number
+}
+
 // ---- Text -> Giong (VieNeu-TTS v3 native CPU) ----
 export interface CpsOptions {
   enabled: boolean

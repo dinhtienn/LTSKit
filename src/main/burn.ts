@@ -1,5 +1,5 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { basename, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { copyFile, mkdtemp, readFile, writeFile, stat, rm, rename } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { resolveFfmpeg } from './deps'
@@ -23,6 +23,8 @@ import {
   type SubtitleScale
 } from '../shared/subtitleLayout'
 import type { BurnReq, BurnProgress, BurnResult, CoChu, SubtitleStyle, TextOverlay, VideoRect } from '../shared/types'
+import type { RenderRange } from './previewRange'
+import { renderRangeArgs } from './previewRange'
 
 let child: ChildProcess | null = null
 
@@ -82,6 +84,12 @@ interface Meta {
   w: number
   h: number
   giay: number
+}
+
+export interface BurnRenderOptions {
+  range?: RenderRange
+  outputPath?: string
+  promote?: boolean
 }
 
 export interface BoCuc {
@@ -472,7 +480,7 @@ async function duLon(f: string): Promise<boolean> {
  *  - 'burn': dot chet vao pixel (dang lai) + che phu de goc bang BLUR (kinh mo).
  * Encoder: thu h264_nvenc (GPU) -> tut libx264 (nvenc de chet vi driver, ra 0 byte).
  */
-export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) => void): Promise<BurnResult> {
+export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) => void, options: BurnRenderOptions = {}): Promise<BurnResult> {
   if (!burnLifecycle.start()) return { ok: false, error: 'Đang xử lý một video khác.' }
   let tam: string | null = null
   try {
@@ -480,8 +488,8 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
     if (!ff) return { ok: false, error: 'Thiếu ffmpeg. Hãy chạy lại bước cài đặt.' }
 
     const goc = basename(req.video).replace(/\.[^.]+$/, '')
-    const output = join(req.outputDir, `${goc}-xuat.mp4`)
-    tam = await mkdtemp(join(req.outputDir, '.ltskit-burn-'))
+    const output = options.outputPath ?? join(req.outputDir, `${goc}-xuat.mp4`)
+    tam = await mkdtemp(join(dirname(output), '.ltskit-burn-'))
     const srtTam = join(tam, 'sub.srt')
     const assTam = join(tam, 'sub.ass')
     let probe
@@ -581,7 +589,7 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       commonArgs.push('-c:s', 'mov_text', '-metadata:s:s:0', 'language=vie')
     }
     commonArgs.push(...(plan.changesAudio ? ['-c:a', 'aac', '-b:a', '192k'] : ['-c:a', 'copy']))
-    commonArgs.push('-t', String(meta.giay))
+    commonArgs.push(...buildRenderLimitArgs(meta.giay, options.range))
 
     const encoders: VideoEncoderCandidate[] = plan.changesPixels
       ? videoEncoderCandidates(req.exportSpeed)
@@ -596,6 +604,10 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       const validOutput = code === 0 && (await duLon(attemptOutput))
       if (burnLifecycle.isCancelled()) return { ok: false, error: 'Đã huỷ.' }
       if (validOutput) {
+        if (options.promote === false) {
+          await rename(attemptOutput, output)
+          return { ok: true, output }
+        }
         const promotion = await promoteOutput(attemptOutput, output, burnLifecycle)
         if (promotion === 'cancelled') return { ok: false, error: 'Đã huỷ.' }
         logInfo(
@@ -629,6 +641,10 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
 
 export function temporaryOutputPath(jobDir: string, attempt: number): string {
   return join(jobDir, `attempt-${attempt}-${randomUUID()}.mp4`)
+}
+
+export function buildRenderLimitArgs(videoDuration: number, range?: RenderRange): string[] {
+  return range ? renderRangeArgs(range) : ['-t', String(videoDuration)]
 }
 
 export interface PromotionHooks {
