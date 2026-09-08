@@ -4,8 +4,9 @@ import { constants } from 'node:fs'
 import { basename, join } from 'node:path'
 import { replaceEngineDirectory } from './ocrInstall'
 import { ASSET_BASE, binDir, downloadFile, ensureDataDirs, extractZip, resolveFfmpeg } from './deps'
-import { debugRaw, errLabel, logInfo } from './logger'
+import { debugRaw, errLabel, logError, logInfo } from './logger'
 import { jobCacheRoot, readCachedOutputs, writeCachedOutputs } from './jobCache'
+import { formatProcessingMetric } from './processingMetrics'
 import { ocrJobKey } from './jobIdentity'
 import type { OcrEngineStatus, OcrProgress, OcrResult } from '../shared/types'
 import { buildOcrArgs } from './ocrArgs'
@@ -106,6 +107,7 @@ export async function ocrVideo(
   y1: number,
   onProgress: (p: OcrProgress) => void
 ): Promise<OcrResult> {
+  const startedAt = performance.now()
   if (child) return { ok: false, error: 'Đang xử lý một video khác.' }
   if (!(await exists(enginePath()))) {
     return { ok: false, error: 'Chưa có công cụ. Vui lòng tải công cụ trước.' }
@@ -126,6 +128,7 @@ export async function ocrVideo(
     )
     if (cached?.outputs.length) {
       logInfo(`Dịch màn hình: dùng lại kết quả đã lưu cho ${basename(input)}`)
+      logInfo(formatProcessingMetric({ job: 'OCR', elapsedMs: performance.now() - startedAt, outcome: 'xong', cache: 'hit' }))
       onProgress({ percent: 100, text: '' })
       return {
         ok: true,
@@ -198,6 +201,7 @@ export async function ocrVideo(
     p.on('error', (err) => {
       debugRaw('ocr spawn', err)
       child = null
+      logError(formatProcessingMetric({ job: 'OCR', elapsedMs: performance.now() - startedAt, outcome: 'lỗi', cache: cacheKey ? 'miss' : undefined }))
       resolve({ ok: false, error: errLabel(err) })
     })
 
@@ -205,6 +209,7 @@ export async function ocrVideo(
       child = null
       if (doneOut) {
         logInfo(`Dịch màn hình: xong ${count} câu.`)
+        logInfo(formatProcessingMetric({ job: 'OCR', elapsedMs: performance.now() - startedAt, outcome: 'xong', cache: 'miss' }))
         if (cacheKey) {
           void writeCachedOutputs(jobCacheRoot(), 'ocr', cacheKey, [doneOut], {
             count,
@@ -220,12 +225,14 @@ export async function ocrVideo(
       }
       // Bi huy giua chung -> khong phai loi
       if (code === null) {
+        logError(formatProcessingMetric({ job: 'OCR', elapsedMs: performance.now() - startedAt, outcome: 'lỗi', cache: cacheKey ? 'miss' : undefined }))
         resolve({ ok: false, error: 'Đã huỷ.' })
         return
       }
       const raw = errMsg || errTail || `code ${code}`
       debugRaw('ocr close', raw)
       resolve({ ok: false, error: errLabel(raw) })
+      logError(formatProcessingMetric({ job: 'OCR', elapsedMs: performance.now() - startedAt, outcome: 'lỗi', cache: cacheKey ? 'miss' : undefined }))
     })
   })
 }

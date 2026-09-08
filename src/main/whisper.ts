@@ -5,6 +5,7 @@ import { basename, join } from 'node:path'
 import { ASSET_BASE, binDir, DATA_DIR, downloadFile, ensureDataDirs, extractZip } from './deps'
 import { jobCacheRoot, readCachedOutputs, writeCachedOutputs } from './jobCache'
 import { whisperJobKey } from './jobIdentity'
+import { formatProcessingMetric } from './processingMetrics'
 import { debugRaw, errLabel, logError, logInfo } from './logger'
 import {
   WhisperCudaStatus,
@@ -115,6 +116,7 @@ export async function transcribeAudio(
   req: WhisperRequest,
   onProgress: (p: WhisperProgress) => void
 ): Promise<WhisperResult> {
+  const startedAt = performance.now()
   const engine = enginePath()
   if (!(await fileExists(engine))) {
     return {
@@ -145,8 +147,9 @@ export async function transcribeAudio(
       cacheKey,
       req.outputDir
     ).catch(() => null)
-    if (cached) {
-      logInfo(`Audio→Text: dùng lại kết quả đã lưu cho ${basename(req.input)}`)
+        if (cached) {
+          logInfo(`Audio→Text: dùng lại kết quả đã lưu cho ${basename(req.input)}`)
+          logInfo(formatProcessingMetric({ job: 'Whisper', elapsedMs: performance.now() - startedAt, outcome: 'xong', device: useCuda ? 'GPU' : 'CPU', cache: 'hit' }))
       onProgress({ id, status: 'finished', percent: 100, language: null, line: null })
       return {
         id,
@@ -263,11 +266,12 @@ export async function transcribeAudio(
       if (last) errTail = last
     })
 
-    child.on('error', (err) => {
+      child.on('error', (err) => {
       // Loi tho -> chi console luc phat trien. Nhat ky + UI chi duoc thay NHAN.
       debugRaw('whisper spawn', err)
       const nhan = errLabel(err)
       logError(`Audio→Text: ${nhan}`)
+      logError(formatProcessingMetric({ job: 'Whisper', elapsedMs: performance.now() - startedAt, outcome: 'lỗi', device: useCuda ? 'GPU' : 'CPU', cache: 'miss' }))
       resolve({ id, ok: false, outputs: [], segments: 0, speakers: 0, error: nhan })
     })
 
@@ -277,6 +281,7 @@ export async function transcribeAudio(
         logInfo(
           `Audio→Text: hoàn tất — ${segments} đoạn, ${outputs.length} tệp${speakers ? `, ${speakers} người nói` : ''}`
         )
+        logInfo(formatProcessingMetric({ job: 'Whisper', elapsedMs: performance.now() - startedAt, outcome: 'xong', device: useCuda ? 'GPU' : 'CPU', cache: 'miss' }))
         if (cacheKey && outputs.length) {
           void writeCachedOutputs(jobCacheRoot(), 'whisper', cacheKey, outputs, {
             segments,
@@ -294,7 +299,8 @@ export async function transcribeAudio(
         const raw = errMsg || errTail || `Thoát mã ${code}`
         debugRaw('whisper close', raw)
         const nhan = errLabel(raw)
-        logError(`Audio→Text: ${nhan}`)
+            logError(`Audio→Text: ${nhan}`)
+            logError(formatProcessingMetric({ job: 'Whisper', elapsedMs: performance.now() - startedAt, outcome: 'lỗi', device: useCuda ? 'GPU' : 'CPU', cache: 'miss' }))
         onProgress({ id, status: 'error', percent: -1, language, line: nhan })
         resolve({ id, ok: false, outputs, segments, speakers, error: nhan })
       }

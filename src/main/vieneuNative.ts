@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import { DATA_DIR, resolveFfmpeg } from './deps'
 import { docSrt, srtTimeToSeconds } from './burn'
 import { debugRaw, errLabel, logError, logInfo, logWarn } from './logger'
+import { formatProcessingMetric } from './processingMetrics'
 import { buildAtempoFilter, planAudioFitIfDurationKnown, trimAudioEdges } from './audioFit'
 import { findMissingVieneuAssets, installVieneuAssets, VIENEU_READY, vieneuPaths } from './vieneuNativeAssets'
 import { buildVieneuCliArgs, resolveVieneuSelection, safeVieneuJobId, usefulVieneuError } from './vieneuNativeCli'
@@ -446,6 +447,7 @@ export async function vieneuSrtToMp3(
   req: VieneuSrtRequest,
   onProgress: (progress: VieneuProgress) => void
 ): Promise<VieneuResult> {
+  const startedAt = performance.now()
   const send = (partial: Partial<VieneuProgress> & Pick<VieneuProgress, 'status'>): void => {
     onProgress({
       id,
@@ -523,7 +525,8 @@ export async function vieneuSrtToMp3(
     await rm(jobDir, { recursive: true, force: true })
     clearJob(id)
     send({ status: 'finished', percent: 100, current: cues.length, total: cues.length, line: output })
-    logInfo(`Text→Giọng: xong ${basename(output)}`)
+        logInfo(`Text→Giọng: xong ${basename(output)}`)
+        logInfo(formatProcessingMetric({ job: 'Text→Giọng', elapsedMs: performance.now() - startedAt, outcome: 'xong', provider: 'VieNeu' }))
     return { id, ok: true, output, error: null }
   } catch (error) {
     const cancelled = started && isCancelled(id)

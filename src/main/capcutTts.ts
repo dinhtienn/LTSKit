@@ -6,6 +6,7 @@ import { app } from 'electron'
 import { DATA_DIR, resolveFfmpeg } from './deps'
 import { docSrt, srtTimeToSeconds } from './burn'
 import { debugRaw, errLabel, logError, logInfo, logWarn } from './logger'
+import { formatProcessingMetric } from './processingMetrics'
 import { capcutPaths, ensureCapcutProfile, rotateCapcutProfile } from './capcutDevice'
 import { buildCapcutAudioPlan } from './capcutAudioPlan'
 import { trimAudioEdges } from './audioFit'
@@ -498,6 +499,7 @@ export async function capcutSrtToMp3(
   req: CapcutSrtRequest,
   onProgress: (progress: VieneuProgress) => void
 ): Promise<VieneuResult> {
+  const startedAt = performance.now()
   const send = (partial: Partial<VieneuProgress> & Pick<VieneuProgress, 'status'>): void => {
     onProgress({
       id,
@@ -671,6 +673,7 @@ export async function capcutSrtToMp3(
     terminalStatus = 'finished'
     send({ status: 'finished', percent: 100, current: cues.length, total: cues.length, line: output })
     logInfo(`CapCut Text→Giọng: xong ${basename(output)}`)
+    logInfo(formatProcessingMetric({ job: 'Text→Giọng', elapsedMs: performance.now() - startedAt, outcome: 'xong', provider: 'CapCut' }))
     return { id, ok: true, output, error: null }
   } catch (error) {
     await manifestWriter?.flush().catch(() => undefined)

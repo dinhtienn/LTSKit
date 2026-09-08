@@ -25,6 +25,7 @@ import {
 import type { BurnReq, BurnProgress, BurnResult, CoChu, SubtitleStyle, TextOverlay, VideoRect } from '../shared/types'
 import type { RenderRange } from './previewRange'
 import { renderRangeArgs } from './previewRange'
+import { formatProcessingMetric } from './processingMetrics'
 
 let child: ChildProcess | null = null
 
@@ -482,6 +483,7 @@ async function duLon(f: string): Promise<boolean> {
  */
 export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) => void, options: BurnRenderOptions = {}): Promise<BurnResult> {
   if (!burnLifecycle.start()) return { ok: false, error: 'Đang xử lý một video khác.' }
+  const startedAt = performance.now()
   let tam: string | null = null
   try {
     const ff = await resolveFfmpeg()
@@ -603,16 +605,18 @@ export async function burnSubtitle(req: BurnReq, onProgress: (p: BurnProgress) =
       if (burnLifecycle.isCancelled()) return { ok: false, error: 'Đã huỷ.' }
       const validOutput = code === 0 && (await duLon(attemptOutput))
       if (burnLifecycle.isCancelled()) return { ok: false, error: 'Đã huỷ.' }
-      if (validOutput) {
-        if (options.promote === false) {
-          await rename(attemptOutput, output)
-          return { ok: true, output }
-        }
+          if (validOutput) {
+            if (options.promote === false) {
+              await rename(attemptOutput, output)
+              logInfo(formatProcessingMetric({ job: 'Preview video', elapsedMs: performance.now() - startedAt, outcome: 'xong', device: `${enc.gpu ? 'GPU ' : 'CPU '}${enc.ten}` }))
+              return { ok: true, output }
+            }
         const promotion = await promoteOutput(attemptOutput, output, burnLifecycle)
         if (promotion === 'cancelled') return { ok: false, error: 'Đã huỷ.' }
-        logInfo(
-          `Dịch màn hình: ghép video xong bằng ${enc.ten}${enc.gpu ? ' (tăng tốc GPU)' : ' (chạy bằng CPU)'}.`
-        )
+            logInfo(
+              `Dịch màn hình: ghép video xong bằng ${enc.ten}${enc.gpu ? ' (tăng tốc GPU)' : ' (chạy bằng CPU)'}.`
+            )
+            logInfo(formatProcessingMetric({ job: 'Xuất video', elapsedMs: performance.now() - startedAt, outcome: 'xong', device: `${enc.gpu ? 'GPU ' : 'CPU '}${enc.ten}` }))
         return { ok: true, output }
       }
       // Nguoi dung can biet vi sao may chay CPU thay vi GPU — im lang o day

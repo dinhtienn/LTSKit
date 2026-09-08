@@ -11,6 +11,7 @@ import {
 import { firstKey, getKey, hasKey, listKeys, loadKey, saveKey } from './geminiStore'
 import { advanceModelCursor, orderedPool } from './geminiModels'
 import { jobCacheRoot, readCachedOutputs, writeCachedOutputs } from './jobCache'
+import { formatProcessingMetric } from './processingMetrics'
 import { translationJobKey } from './jobIdentity'
 import { createGeminiKeyPool, type GeminiKeyLease, type GeminiKeyPool } from './geminiKeyPool'
 export { hasKey, loadKey, saveKey }
@@ -351,6 +352,7 @@ export async function translateSrt(
   generate?: GeminiGenerate,
   jobId = `translation-${Date.now()}-${Math.random()}`
 ): Promise<GeminiTranslationResult> {
+  const startedAt = performance.now()
   const key = generate ? '' : await firstKey()
   if (!generate && !key) return { ok: false, error: 'Chưa có API key.' }
 
@@ -372,6 +374,7 @@ export async function translateSrt(
     ).catch(() => null)
     if (cached?.outputs.length) {
       logInfo(`Dịch phụ đề: dùng lại bản dịch đã lưu cho ${basename(srtPath)}`)
+      logInfo(formatProcessingMetric({ job: 'Gemini', elapsedMs: performance.now() - startedAt, outcome: 'xong', cache: 'hit' }))
       onProgress?.(blocks.length, blocks.length)
       return {
         ok: true,
@@ -420,6 +423,7 @@ export async function translateSrt(
   else await rm(outPath, { force: true })
   await writeFile(saved, buildSrt(ra), 'utf-8')
   logInfo(`Dịch phụ đề: xong ${ra.length} câu${verified ? '' : ' (chưa xác nhận ngôn ngữ)'}.`)
+  logInfo(formatProcessingMetric({ job: 'Gemini', elapsedMs: performance.now() - startedAt, outcome: 'xong', cache: 'miss' }))
   if (cacheKey) {
     void writeCachedOutputs(jobCacheRoot(), 'translation', cacheKey, [saved], {
       count: ra.length,
