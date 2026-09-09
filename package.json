@@ -1,6 +1,6 @@
 {
   "name": "ltskit",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "LTSKit - Công cụ tải, xử lý và dịch nội dung đa nền tảng",
   "main": "./out/main/index.js",
   "author": "dinhtienn",

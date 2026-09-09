@@ -11,6 +11,9 @@ extraResources:
     filter:
       - '**/*'
 files:
+  - '!engines/**'
+  - '!scripts/**'
+  - '!resources/**'
   - '!**/.vscode/*'
   - '!appdata/**'
   - '!.release-assets/**'
